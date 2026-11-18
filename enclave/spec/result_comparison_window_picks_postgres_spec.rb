@@ -132,4 +132,15 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
     end
   end
+
+  it "forces a window over an unaliased FROM subquery as it does an aliased one" do
+    unaliased = ->(key) { "SELECT grp, label FROM (SELECT *, #{key} AS rn FROM (SELECT * FROM items)) s WHERE rn = 1" }
+    keyed = unaliased.call("row_number() OVER (PARTITION BY grp ORDER BY label)")
+    loose = unaliased.call("row_number() OVER (PARTITION BY grp)")
+
+    expect(fields(compare(keyed, keyed))).to eq(match: true, rule: nil)
+    expect(fields(compare(keyed, loose))).to eq(match: false, rule: :multiset)
+    expect(fields(compare(loose, keyed))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
+  end
+
 end

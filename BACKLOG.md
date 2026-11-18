@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261011-7
+- 20261115-073253-2
 - 20261115-073253-1
 - 20261011-11
 - 20261012-8
@@ -503,15 +504,6 @@ From the build of 20261015-5. (1) `ARRAY(SELECT ...)` with no `ORDER BY`, or one
 - **Came from:** The build of 20261015-5, 2026-11-15.
 - **Design:** fixture-compare.
 - **Landed so far:** (2) and (3), with Postgres tests: a window `min` or `max` gets a check, and a window in an aggregate select with no GROUP BY picks nothing. (1) is listed in DESIGN.md as unsupported in v1, since the reordered loads are what catch it. (4) stays open: revisit if real runs hit those refusals.
-- **Status:** todo
-
-### 20261115-073253-2. Window picks: an unaliased FROM subquery, and GROUPING SETS with a window.
-
-From the review of 20261015-5 (minor). (1) A Postgres 16+ unaliased FROM subquery (`SELECT *, row_number() OVER (...) rn FROM (SELECT * FROM items)`) refuses as `unforceable_pick` where the aliased form matches. Support it or list it in DESIGN.md as unsupported in v1. (2) `GROUP BY GROUPING SETS` or `ROLLUP` with a window function may end as `pick_run_failed` rather than a clean refusal (the reviewer's guess, untested). Test first, then refuse cleanly.
-
-- **Depends on:** 20261015-5 (landed).
-- **Came from:** The review of 20261015-5, 2026-11-15 (minor).
-- **Design:** fixture-compare.
 - **Status:** todo
 
 ### 20261118-194818-1. Denormalized fixture: a domain CHECK on the copy column (minor from 20261011-5).

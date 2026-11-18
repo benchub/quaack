@@ -104,7 +104,7 @@ module Quaack
         PICK = "quaack_pick"
 
         # A DISTINCT ON whose * can't be named, since a FROM item has no
-        # name, as an unaliased subquery doesn't.
+        # name, as an unaliased function call or VALUES doesn't.
         class Unforceable < StandardError; end
 
         module_function
@@ -448,9 +448,18 @@ module Quaack
 
           aliased = item.values.first[:alias]&.fetch(:aliasname)
           return [[aliased]] if aliased
+          return [[name_subselect!(item[:range_subselect])]] if item[:range_subselect]
 
           relation = item[:range_var] or raise Unforceable
           [[relation[:schemaname], relation[:relname]].compact]
+        end
+
+        # Names an unaliased FROM subquery (Postgres 16+) in the forced
+        # copy, so its whole row can be named. Nothing can refer to it by
+        # name in the query as written.
+        def name_subselect!(subselect)
+          subselect[:alias] = { aliasname: "#{PICK}_from" }
+          "#{PICK}_from"
         end
 
         def join_names(join)
