@@ -4,6 +4,7 @@ require "pg"
 require_relative "../arena_runner"
 require_relative "../result_comparator"
 require_relative "../result_comparison"
+require_relative "../server_clock"
 
 module Quaack
   module Enclave
@@ -26,16 +27,18 @@ module Quaack
       # Trust boundary: only indexes come back; the rows stay in the arena.
       module Differ
         ORIGINAL = "quaack_coverage_original"
+        QUERY_CANCELED = "57014"
 
         module_function
 
         # typed (an ArenaRunner::Typed) gives each statement's parameters,
         # for the $n the queries hold (task 20261110-14).
-        def differing(conn, original, sqls, typed = ArenaRunner::Typed.new(nil))
+        def differing(conn, original, sqls, typed = ArenaRunner::Typed.new(nil), statement_timeout_ms: nil)
           return [] if sqls.empty?
 
-          flagged = saved(conn) { multisets(conn, original, sqls, typed) } || sqls.each_index.to_a
-          flagged.select { |index| saved(conn) { official?(conn, original, sqls[index], typed) } }
+          timeout = statement_timeout_ms
+          flagged = saved(conn, timeout) { multisets(conn, original, sqls, typed) } || sqls.each_index.to_a
+          flagged.select { |index| saved(conn, timeout) { official?(conn, original, sqls[index], typed) } }
         end
 
         # The indexes whose rows differ from the original's as multisets, or
@@ -63,15 +66,30 @@ module Quaack
         end
 
         # The block's value, inside a savepoint; nil, rolled back, when it
-        # raises a database error or a comparison can't judge.
-        def saved(conn)
-          conn.exec("SAVEPOINT quaack_atoms")
+        # raises a database error or a comparison can't judge. A cancel
+        # counts so only when it's QUAACK's statement_timeout_ms, by the
+        # server's clock (ServerClock); any other cancel, such as an
+        # operator's pg_cancel_backend, says nothing about the atom, so it
+        # raises statement_canceled, ending the step (task 20261012-52).
+        def saved(conn, timeout_ms)
+          started = ServerClock.mark(conn, "SAVEPOINT quaack_atoms;")
           value = yield
           conn.exec("RELEASE SAVEPOINT quaack_atoms")
           value
+        rescue PG::QueryCanceled
+          canceled(conn, started, timeout_ms)
         rescue PG::Error, *UNJUDGED
           conn.exec("ROLLBACK TO SAVEPOINT quaack_atoms")
           nil
+        end
+
+        # nil after QUAACK's own timeout; any other cancel raises.
+        def canceled(conn, started, timeout_ms)
+          timed_out = timeout_ms && ServerClock.timed_out?(conn, started, timeout_ms)
+          conn.exec("ROLLBACK TO SAVEPOINT quaack_atoms")
+          return nil if timed_out
+
+          raise ArenaRunner::Error.new(:statement_canceled, step: :query, sqlstate: QUERY_CANCELED), cause: nil
         end
       end
     end

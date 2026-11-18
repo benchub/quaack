@@ -23,6 +23,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261114-222449-1
 - 20261114-053159-1
 - 20261011-5
+- 20261012-52
 
 
 ## How this file works.
@@ -344,6 +345,26 @@ From the build of 20261012-4. Check each first; drop any that isn't real:
 - **Depends on:** None.
 - **Came from:** The build of 20261012-4, 2026-10-14 (minor).
 - **Design:** rewrite-test.
+- **Outcome (2026-11-18):** (1) Real; a design decision, filed as 20261118-191500-1. (2) Real: `Fuzz::Differ` took any cancel as no difference; it now tells QUAACK's timeout from another cancel by the server's clock and raises `statement_canceled` for the other (`fuzz_differ_postgres_spec.rb`). (3) Done: `fuzz_fk_cycle_postgres_spec.rb`; one wrong rewrite fuzz and enumerate both pass is filed as 20261118-185846-1. (4) Done: DESIGN.md's enumerate section.
+- **Status:** done
+
+### 20261118-191500-1. Send every atom as untested when the search couldn't test a rewrite.
+
+From 20261012-52, bullet 1. A rewrite rewrite-test's search couldn't test goes on with no untested atoms, so llm-counterexamples has nothing to aim its rows at for it. The builder recommends sending every atom of the original as untested, since none was tested. That changes the counterexample prompt for such rewrites, so recorded replays with an untested rewrite would drift and need re-recording. Waiting on the user's decision. Enclave change if built; it goes on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** 20261012-52.
+- **Design:** rewrite-test (coverage), counterexamples.
+- **Open questions:** Whether to do it, and whether the replay drift is acceptable.
+- **Status:** todo
+
+### 20261118-185846-1. Fuzz and enumerate pass a wrong rewrite that needs both edges of an FK cycle filled.
+
+From 20261012-52. On `accounts.course_template_id -> courses` (nullable) and `courses.account_id -> accounts` (NOT NULL), dropping a Rails `where.missing` anti join (`... LEFT JOIN courses c ON c.id = a.course_template_id WHERE c.id IS NULL` rewritten as all accounts) passes fuzz at 1000 trials and enumerate at 2000 worlds (bound 3). A world that tells them apart needs an account whose template is a course of an account, which the lift loads with every constraint enforced in table order (`Fuzz::Lift#loaded`, "a cycle among them loads in the order found, and fails to load if it must"), so the kill likely never lifts. Load the nullable cycle column after both tables, by UPDATE, as counterexample rounds do (20261003-17), and add the case to `enclave/spec/fuzz_fk_cycle_postgres_spec.rb`, red first. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** The build of 20261012-52, 2026-11-18.
+- **Design:** rewrite-test (fuzz's lift).
 - **Status:** todo
 
 ### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error. Done, see BACKLOG-COMPLETE.md.

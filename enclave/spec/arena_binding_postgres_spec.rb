@@ -509,7 +509,7 @@ RSpec.describe "the arena's queries on the $n form" do
       expect(session.differing(sql, ["SELECT i.id FROM fx.items i"])).to eq([0])
       expect(Quaack::Enclave::Fuzz::Differ).to have_received(:differing).with(conn, sql, anything, satisfy { |typed|
         typed.binding == bound
-      })
+      }, statement_timeout_ms: 10_000)
     ensure
       conn.exec("ROLLBACK")
     end
