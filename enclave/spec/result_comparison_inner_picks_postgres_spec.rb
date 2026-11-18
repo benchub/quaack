@@ -131,7 +131,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       function = "SELECT DISTINCT ON (unnest) * FROM unnest(ARRAY[1, 1, 2]) ORDER BY unnest"
 
       expect(fields(compare(subquery, subquery))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
-      expect(fields(compare(function, function))).to eq(match: false, rule: :unsupported_order, reason: :unforceable_pick)
+      expect(fields(compare(function,
+                            function))).to eq(match: false, rule: :unsupported_order, reason: :unforceable_pick)
     end
   end
 
