@@ -30,12 +30,14 @@ module Quaack
 
         # Print mode with one JSON result, no built-in tools, no MCP servers
         # but the (absent) --mcp-config ones, no skills or slash commands,
-        # and no session saved to disk. The system prompt file replaces
-        # Claude Code's own.
+        # no session saved to disk, and no user, project, or local settings
+        # (so none of their hooks or plugins). The system prompt file
+        # replaces Claude Code's own.
         DEFAULT_TEMPLATE = [
           "claude", "-p", "--output-format", "json",
           "--model", "{model}",
           "--tools", "",
+          "--setting-sources", "",
           "--strict-mcp-config",
           "--disable-slash-commands",
           "--no-session-persistence",

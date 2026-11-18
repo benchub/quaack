@@ -13891,3 +13891,13 @@ From the build of 20261012-4. Check each first; drop any that isn't real:
 - **Design:** rewrite-test.
 - **Outcome (2026-11-18):** (1) Real; a design decision, filed as 20261118-191500-1. (2) Real: `Fuzz::Differ` took any cancel as no difference; it now tells QUAACK's timeout from another cancel by the server's clock and raises `statement_canceled` for the other (`fuzz_differ_postgres_spec.rb`). (3) Done: `fuzz_fk_cycle_postgres_spec.rb`; one wrong rewrite fuzz and enumerate both pass is filed as 20261118-185846-1. (4) Done: DESIGN.md's enumerate section.
 - **Status:** done
+### 20261110-19. claude_cli: keep user-level Claude Code settings out of each ask.
+
+From the review of 20261010-18 (minor). The command runs in a private temp dir, so project settings and CLAUDE.md stay out, but user-level ones still apply: `~/.claude` settings hooks run (a UserPromptSubmit hook receives the prompt), user plugins load, and `~/.claude/CLAUDE.md` and auto-memory reach the model as context even with `--system-prompt-file`. Prompts carry only shapes, so this isn't a boundary leak, but it can steer replies or run the operator's code on every ask. Check whether `--setting-sources ""` (or similar) also stops user CLAUDE.md and memory, and add it to the default command; otherwise document `--bare` with an API key. Verify with a real `claude` run the user approves.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261010-18, 2026-11-10.
+- **Design:** LLM client.
+- **Status:** done
+
+Landed: the default command adds `--setting-sources ""`. A real run (synthetic prompt) with it still worked; no user CLAUDE.md exists on this machine, and a temp CLAUDE_CONFIG_DIR wasn't logged in, so the CLAUDE.md and memory effect rests on the CLI's help: the flag loads none of the user, project, or local sources.
