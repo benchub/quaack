@@ -322,8 +322,9 @@ Trimmed 2026-10-14 after 20261012-4: removed the findings about ScenarioTests' `
 ### 20261012-48. fuzz's 60 s cap: say "about 90 seconds", and watch the slowest kill's margin.
 
 From the review of 20261012-35, 2026-10-14 (minor).
-1. **"At most 90 seconds" is a soft bound.** DESIGN.md's Stop rule bullet and `Fuzz::StopRule`'s comment (`enclave/lib/quaack/enclave/fuzz/stop_rule.rb`) say fuzz plus enumerate takes at most 90 s per sound rewrite. Three things can run past it: the trial in progress when the cap fires; shrinking and lifting a kill found just before the cap (up to `SHRINKS` = 200 trials, `fuzz.rb`), whose lift then fails; and building enumerate's kinds, which happens before its 30 s `Limit` starts (`Fuzz::Search#enumerate`). The rewrite's 5-minute Deadline still bounds all three. Say "about 90 seconds", and name what can run over, wording only.
 2. **The slowest kill's margin.** The slowest kill in any corpus, `cv_topics_nulls_last`, comes at trial 8,227: 25–28 s with four measurement shards running, about half the cap. A jump server about twice as slow would lose it. The user chose the plain 60 s cap (20261012-35's option 1) knowing this; option 3 there (a 10,000-trial floor up to the cap) is the fix if the user's real-schema run shows trial rates that low. Check the rates in that run's burndown (`fuzz` trials and times) and ask the user before changing the rule.
+
+- **Landed so far:** Item 1 (2026-11-18): DESIGN.md's Stop rule bullet and `Fuzz::StopRule`'s comment now say "about 90 seconds" and name what can run over. Item 2 waits on the user's real-schema run.
 
 - **Depends on:** None.
 - **Came from:** The review of 20261012-35, 2026-10-14 (minor).
