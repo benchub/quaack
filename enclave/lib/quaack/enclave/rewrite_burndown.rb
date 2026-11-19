@@ -102,7 +102,9 @@ module Quaack
         disproved = outcome.verdict == :disproved
         kind = outcome.reason == :out_of_time ? :not_tested_in_time : :untested
         untested = outcome.verdict == :untested ? { kind => 1 } : {}
-        extra = { trials: Protocol::FuzzResult.bucket(outcome.trials), **untested, **settings }
+        # A withheld outcome (task 20261119-044500-1) has no trials to record.
+        trials = outcome.trials && { trials: Protocol::FuzzResult.bucket(outcome.trials) }
+        extra = { **trials, **untested, **settings }
         Burndown.record_latest(
           store, [["fuzz", search.to_sym, { in: 1, dropped: disproved ? { fuzz_drop(outcome.rule) => 1 } : {},
                                             out: disproved ? 0 : 1, extra: }]]

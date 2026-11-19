@@ -378,8 +378,36 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run
 
       expect(lines_of("rewrite-correctness")[2])
-        .to eq("#{name}: Survived 41,200 random small databases built around the query's values (rewrite-test)")
+        .to eq("#{name}: Survived at least 41,200 random small databases built around the query's values " \
+               "(rewrite-test)")
       expect(closing("rewrite-correctness")).to eq(["Tested 1 rewrite, 1 passed"])
+    end
+
+    # Task 20261119-060642-1: a count-threshold search sends withheld, not trials.
+    it "says a count-threshold rewrite survived the random search, without a number" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => true, "rule" => nil,
+                   "stage" => "fuzz", "trials" => nil, "withheld" => true })
+      3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+      run
+
+      expect(lines_of("rewrite-correctness")[2])
+        .to eq("#{name}: Survived random small databases built around the query's values, how many withheld " \
+               "for a count threshold (rewrite-test)")
+    end
+
+    it "says a count-threshold rewrite matched up to the bound, without fuzz's number" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push({ "type" => "rewrite_test", "passed" => true, "rule" => nil, "stage" => "enumerate",
+                   "trials" => nil, "withheld" => true, "worlds" => 512, "bound" => 2, "tables" => 1 })
+      3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+      run
+
+      expect(lines_of("rewrite-correctness")[2])
+        .to start_with("#{name}: Found no difference on random datasets, how many withheld for a count " \
+                       "threshold, or on any dataset of up to 2 rows")
     end
 
     # Task 20261012-3: enumerate runs after a fuzz pass, inside rewrite-test.
@@ -404,7 +432,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run
 
       expect(lines_of("rewrite-correctness")[2])
-        .to eq("#{name}: Found no difference on 40 random datasets, or on any dataset of up to 2 rows built " \
+        .to eq("#{name}: Found no difference on at least 40 random datasets, or on any dataset of up to 2 rows built " \
                "from the query's own values (its constants, values next to them, and NULL) (rewrite-test)")
     end
 
@@ -421,7 +449,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
         run
 
         expect(lines_of("rewrite-correctness")[2])
-          .to eq("#{name}: Survived 40 random small databases built around the query's values (rewrite-test)")
+          .to eq("#{name}: Survived at least 40 random small databases built around the query's values (rewrite-test)")
       end
     end
 

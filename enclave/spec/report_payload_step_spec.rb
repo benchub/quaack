@@ -971,6 +971,8 @@ RSpec.describe "quaacks report-payload" do
                                                        "worlds" => sentinel, "bound" => 37, "tables" => 37,
                                                        "fuzz_stop" => stop.merge("reason" => sentinel)))
           stored(store, 12, tested: tested(true).merge("trials" => 32, "fuzz_stop" => stop.merge("seconds" => 4.2)))
+          stored(store, 13, tested: tested(true).merge(enumerated, "trials" => nil, "withheld" => true))
+          stored(store, 14, tested: tested(true).merge(enumerated, "withheld" => true, "fuzz_stop" => stop))
         end
       end
 
@@ -989,6 +991,14 @@ RSpec.describe "quaacks report-payload" do
         expect(rewrite(12)).to include("fuzz_stop" => nil)
         expect(rewrite(6)).to include("fuzz_stop" => nil)
         expect_no_leaks(sentinels, outcome)
+      end
+
+      # Task 20261119-044500-1: a count-threshold search's entry says
+      # withheld, and the payload then sends no trials and no fuzz_stop.
+      it "sends withheld for a count-threshold search, with no trials and no fuzz_stop" do
+        expect(rewrite(13)).to include("withheld" => true, "trials" => nil, "fuzz_stop" => nil, "worlds" => 512)
+        expect(rewrite(14)).to include("withheld" => true, "trials" => nil, "fuzz_stop" => nil)
+        expect(rewrite(10)).not_to have_key("withheld")
       end
 
       it "sends an enumerate pass's worlds, bound and tables, and none that aren't a count and a bound" do

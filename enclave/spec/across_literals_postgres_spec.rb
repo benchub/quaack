@@ -207,17 +207,30 @@ RSpec.describe "The search's caution across literals" do
   # Task 20261010-47: what a rewrite_test sends of enumerate, its worlds as
   # a power-of-two bucket and its bound, is the same for every threshold. A
   # world cap stands in for production's (Limit::WORLDS), so the check
-  # holds what the code sends, not the machine's speed. Fuzz's trials
-  # aren't held here: even under a trial-count rule they follow when the
-  # search last found a new plan behaviour, which follows the threshold
-  # (DESIGN.md's rewrite-test, "What it sends").
-  it "sends the same bucketed worlds and bound for every count threshold" do
+  # holds what the code sends, not the machine's speed. Task
+  # 20261119-044500-1: fuzz's trials follow when the search last found a
+  # new plan behaviour, which follows the threshold even under a trial-count
+  # rule, so for a count-threshold query fuzz sends no trials and no
+  # fuzz_stop, only the fixed withheld flag. Everything counts sends is held.
+  it "sends the same counts for every count threshold, trials and fuzz_stop withheld" do
     by_value = thresholds.to_h do |n|
       sql = correlated.call(">", n)
       results = fuzz.search(conn, sql, "#{sql} AND true", stop: fuzz::StopRule.trials(100),
                                                           enumerate: fuzz::Enumerate::Limit.worlds(3000), seed: 7)
-      [n, Quaack::Enclave::Steps::RewriteFuzz.counts(results).slice("worlds", "bound")]
+      [n, Quaack::Enclave::Steps::RewriteFuzz.counts(results)]
     end
-    expect(by_value.values.uniq).to eq([{ "worlds" => 2048, "bound" => 1 }]), classes(by_value).join("\n")
+    expect(by_value.values.uniq).to eq([{ "trials" => nil, "fuzz_stop" => nil, "withheld" => true,
+                                          "worlds" => 2048, "bound" => 1 }]), classes(by_value).join("\n")
+  end
+
+  it "sends the same counts for a count-threshold disproof at every threshold" do
+    from, to = boundary.fetch("> as >=")
+    by_value = thresholds.to_h do |n|
+      results = fuzz.search(conn, correlated.call(from, n), correlated.call(to, n),
+                            stop: fuzz::StopRule.trials(400), enumerate: nil, seed: 7)
+      [n, Quaack::Enclave::Steps::RewriteFuzz.counts(results).except("worlds", "bound")]
+    end
+    expect(by_value.values.uniq).to eq([{ "trials" => nil, "fuzz_stop" => nil, "withheld" => true }]),
+                                    classes(by_value).join("\n")
   end
 end

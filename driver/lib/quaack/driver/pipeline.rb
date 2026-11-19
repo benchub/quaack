@@ -312,13 +312,33 @@ module Quaack
           disproof = SEARCH_DISPROOFS[message["stage"]]
           return disproof if disproof && message["passed"] == false
 
-          trials, bound = message.values_at("trials", "bound")
-          return unless trials.is_a?(Integer) && trials.positive?
-          return "Survived #{Report::Words.count(trials, "random small database")} built around the query's values" \
+          return withheld_note(message) if message["withheld"] == true && message["passed"] == true
+
+          trials = message["trials"]
+          counted_note(message, trials) if trials.is_a?(Integer) && trials.positive?
+        end
+
+        # Trials are a power-of-two bucket (task 20261010-47), so the count
+        # is a lower bound (task 20261119-060642-1).
+        def counted_note(message, trials)
+          unless Protocol::FuzzResult.bound_claimed?(message)
+            return "Survived at least #{Report::Words.count(trials, "random small database")} built around the " \
+                   "query's values"
+          end
+
+          "Found no difference on at least #{Report::Words.count(trials, "random dataset")}, or on any dataset of " \
+            "up to #{Report::Words.count(message["bound"], "row")} #{Report::Words::ENUMERATED_FROM}"
+        end
+
+        WITHHELD = "how many withheld for a count threshold"
+
+        # A count-threshold search sends no trials (task 20261119-044500-1).
+        def withheld_note(message)
+          return "Survived random small databases built around the query's values, #{WITHHELD}" \
             unless Protocol::FuzzResult.bound_claimed?(message)
 
-          "Found no difference on #{Report::Words.count(trials, "random dataset")}, or on any dataset of up to " \
-            "#{Report::Words.count(bound, "row")} #{Report::Words::ENUMERATED_FROM}"
+          "Found no difference on random datasets, #{WITHHELD}, or on any dataset of up to " \
+            "#{Report::Words.count(message["bound"], "row")} #{Report::Words::ENUMERATED_FROM}"
         end
 
         # A rewrite whose test ran past its budget (Protocol::RewriteBudget)

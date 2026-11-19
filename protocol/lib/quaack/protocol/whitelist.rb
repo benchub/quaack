@@ -164,7 +164,7 @@ module Quaack
       # 20261012-31 adds tables, how many tables the queries read (nil or 0
       # to 5, 5 meaning 5 or more). All are
       # checked by Protocol::FuzzResult.rewrite_test?. Never SQL or a row.
-      rewrite_test: %i[rewrite passed rule stage trials worlds bound tables].freeze,
+      rewrite_test: %i[rewrite passed rule stage trials withheld worlds bound tables].freeze,
       # DESIGN.md's llm-counterexamples payload, from `quaacks counterexample-payload`:
       # original is the redacted query, candidate { "sql" } the stored
       # rewrite's SQL with $n placeholders (the LLM's own, as the inbound

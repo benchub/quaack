@@ -141,8 +141,12 @@ module Quaack
         # fuzz's trials and why it stopped, and enumerate's worlds and bound
         # (0 and nil when it didn't run), trials and worlds as
         # Protocol::FuzzResult.bucket gives them (task 20261010-47).
+        # Task 20261119-044500-1: a withheld fuzz outcome sends no trials
+        # and no fuzz_stop, and says so with withheld true.
         def counts(results)
-          { "trials" => Protocol::FuzzResult.bucket(results.fuzz.trials), "fuzz_stop" => results.fuzz.stop,
+          fuzz = results.fuzz
+          { "trials" => fuzz.trials && Protocol::FuzzResult.bucket(fuzz.trials), "fuzz_stop" => fuzz.stop,
+            **(fuzz.withheld ? { "withheld" => true } : {}),
             "worlds" => Protocol::FuzzResult.bucket(results.enumerate.worlds), "bound" => results.enumerate.bound }
         end
 

@@ -103,10 +103,14 @@ module Quaack
         rewrites.all? do |rewrite|
           sizes = field(rewrite, "sizes")
           (sizes.nil? || check(sizes, tables(original_sql, field(rewrite, "sql")))) &&
-            Protocol::FuzzResult.counts?(%w[trials worlds bound tables].to_h { [it, field(rewrite, it)] }) &&
+            Protocol::FuzzResult.counts?(COUNT_KEYS.to_h { [it, field(rewrite, it)] }) &&
             Protocol::FuzzResult.stop?(field(rewrite, "fuzz_stop"))
         end
       end
+
+      # withheld and fuzz_stop too (task 20261119-044500-1): withheld
+      # true refuses trials and a fuzz_stop.
+      COUNT_KEYS = %w[trials worlds bound tables withheld fuzz_stop].freeze
 
       def field(rewrite, key) = rewrite.fetch(key) { rewrite[key.to_sym] }
     end

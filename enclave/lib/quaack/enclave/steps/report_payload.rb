@@ -239,13 +239,22 @@ module Quaack
         # sizes, if FuzzSizes.check passes them against the two queries.
         def fuzz(store, name, original, sql)
           tested = NegativeResult.optional(store, name.sub("rewrite_", "rewrite_tested_")) || {}
+          withheld(tested).merge(counts(tested), "sizes" => FuzzSizes.check(tested["sizes"],
+                                                                            FuzzSizes.tables(original, sql)))
+        end
+
+        # Task 20261119-044500-1: a count-threshold search withholds its
+        # trials and fuzz_stop, and says so.
+        def withheld(tested) = tested["withheld"] == true ? { "withheld" => true } : {}
+
+        def counts(tested)
           trials, worlds, bound, tables, stop = tested.values_at("trials", "worlds", "bound", "tables", "fuzz_stop")
+          trials = stop = nil if tested["withheld"] == true
           { "trials" => (trials if Protocol::FuzzResult.trials?(trials)),
             "fuzz_stop" => (stop if Protocol::FuzzResult.stop?(stop)),
             "worlds" => (worlds if Protocol::FuzzResult.trials?(worlds)),
             "bound" => (bound if Protocol::FuzzResult.bound?(bound)),
-            "tables" => (tables if Protocol::FuzzResult.tables?(tables)),
-            "sizes" => FuzzSizes.check(tested["sizes"], FuzzSizes.tables(original, sql)) }
+            "tables" => (tables if Protocol::FuzzResult.tables?(tables)) }
         end
 
         def rewrite_plan(store, search, stats)

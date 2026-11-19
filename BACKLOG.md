@@ -5,6 +5,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 ## Unreleased enclave changes.
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
+- 20261119-044500-1
 - 20261118-223854-1
 - 20261119-001202-1
 - 20261010-47
@@ -71,19 +72,6 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 ## Run server.
 
 ## Added later.
-
-### 20261010-47. Trust boundary: fuzz's trials, enumerate's worlds and bound can follow query literals. Done, see BACKLOG-COMPLETE.md.
-
-### 20261119-044500-1. Trust boundary: fuzz's trial count follows a count threshold through its stop rule, not only through time (from 20261010-47).
-
-The builder of 20261010-47 found that bucketing doesn't hold fuzz's `trials` the same across count thresholds. Even under `QUAACKS_FUZZ_TRIALS=100` (no clock), the correlated `count(...) > n` query's pass ran between 134 and 1000 compared trials for n = 0..10 (buckets 128 to 512), because the stop rule stops at twice the trial of the last new plan signature, and which signatures turn up follows the threshold. The real rule has the same dependence. Ask the user what to do: stop sending `trials` for a query with a count threshold (`Reach.threshold_paths`), send a fixed word instead, use a coarser bucket, or accept it and say so in DESIGN.md's "Counts across literals". Then hold it in `enclave/spec/across_literals_postgres_spec.rb`, red first. `fuzz_stop`'s `seconds` and `quiet`, times in the report payload, belong to the same question. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261010-47.
-- **Came from:** The builder of 20261010-47, 2026-11-19. Priority: trust boundary.
-- **Design:** rewrite-test ("Counts across literals").
-- **Open questions:** The option above.
-- **User's choice (2026-11-19):** send no trials, and none of `fuzz_stop`'s exact seconds, when either query has a count threshold; the report says the search ran without a number.
-- **Status:** todo
 
 ### 20260923-1. Postgres 17 parser under Postgres 18. Done, see BACKLOG-COMPLETE.md.
 
@@ -518,13 +506,4 @@ From the build of 20261015-5. (1) `ARRAY(SELECT ...)` with no `ORDER BY`, or one
 - **Came from:** The review of 20261110-19, 2026-11-18 (minor).
 - **Design:** LLM client.
 - **Status:** todo (needs the user's go-ahead for real claude calls and a planted user CLAUDE.md)
-
-### 20261119-060642-1. Report: say bucketed counts are lower bounds, and say sizes were withheld for a count threshold (minors from 20261010-47).
-
-The review of 20261010-47 found: (1) `search_note` in `driver/lib/quaack/driver/pipeline.rb` and the report's `survival.rb` print a power-of-two bucket as if exact ("Found no difference on 32,768 random datasets"); the real count can be nearly double, so say "at least N". (2) For a count-threshold query every footprint table reports size 5, and `size_words` in `driver/lib/quaack/driver/report/rewrites.rb` renders "5 or more rows in X", which is false for a threshold-0 disproof with no child rows; say the sizes were withheld for a count-threshold query (a fixed flag in the payload the report can read). Driver change, tests red first.
-
-- **Depends on:** 20261010-47 (landed).
-- **Came from:** The review of 20261010-47, 2026-11-19 (minor).
-- **Design:** report.
-- **Status:** todo
 

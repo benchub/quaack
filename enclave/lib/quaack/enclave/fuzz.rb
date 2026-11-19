@@ -53,6 +53,11 @@ module Quaack
     # sizes are a disproof's rows per table, as [schema, table, count] for
     # each footprint table with rows, sorted; the rows themselves never
     # leave here.
+    # withheld is true when either query compares an aggregate with a
+    # constant (Reach.threshold_paths, task 20261119-044500-1): how many
+    # trials ran and when the search stopped follow when it last found a new
+    # plan behaviour, which follows the threshold, so a pass or disproof
+    # then has trials and stop nil.
     #
     # The seed is from the two queries' text, so the same pair searches the
     # same worlds, and a run can be repeated by hand.
@@ -62,8 +67,8 @@ module Quaack
     # query that names a table without its schema, whose footprint can't
     # be read: a search on it would test nothing.
     module Fuzz
-      Outcome = Data.define(:verdict, :rule, :trials, :sizes, :reason, :stop) do
-        def initialize(stop: nil, **) = super
+      Outcome = Data.define(:verdict, :rule, :trials, :sizes, :reason, :stop, :withheld) do
+        def initialize(stop: nil, withheld: false, **) = super
       end
 
       class Error < StandardError
@@ -288,6 +293,8 @@ module Quaack
         def ended(why = :no_world) = @compared.zero? ? Fuzz.untested(why) : outcome(:passed)
 
         def outcome(verdict, rule = nil, sizes = [])
+          return Outcome.new(verdict:, rule:, trials: nil, sizes:, reason: nil, withheld: true) if @thresholded
+
           Outcome.new(verdict:, rule:, trials: @compared, sizes:, reason: nil, stop: @stopped)
         end
 

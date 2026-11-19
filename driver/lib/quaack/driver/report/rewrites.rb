@@ -187,9 +187,14 @@ module Quaack
         # differs", or nil with neither. Sizes that aren't [schema, table,
         # rows] triples, rows a positive count, are left out.
         def fuzz(entry)
-          parts = [sizes(entry["sizes"]), Words::MISMATCHES[entry["rule"]]].compact
+          parts = [entry["withheld"] == true ? WITHHELD_SIZES : sizes(entry["sizes"]),
+                   Words::MISMATCHES[entry["rule"]]].compact
           parts.join("; ") unless parts.empty?
         end
+
+        # Task 20261119-060642-1: a count-threshold disproof's sizes all say
+        # 5 whatever the shrunk world had (task 20261118-220251-1).
+        WITHHELD_SIZES = "its row counts withheld for a count threshold"
 
         def sizes(list)
           return unless list.is_a?(Array) && !list.empty? && list.all? { size?(it) }

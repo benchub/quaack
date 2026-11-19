@@ -108,7 +108,18 @@ module Quaack
       # Whether fields' trials and worlds are nil or counts, its bound nil or
       # 0 to MAX_BOUND, and its tables nil or 0 to MAX_TABLES.
       def counts?(fields)
-        trials?(fields["trials"]) && trials?(fields["worlds"]) && bound?(fields["bound"]) && tables?(fields["tables"])
+        trials?(fields["trials"]) && trials?(fields["worlds"]) && bound?(fields["bound"]) &&
+          tables?(fields["tables"]) && withheld?(fields)
+      end
+
+      # Task 20261119-044500-1: withheld is nil, false or true, and true (a
+      # query with a count threshold) leaves fuzz's trials and fuzz_stop
+      # out, since they follow the threshold.
+      def withheld?(fields)
+        withheld = fields["withheld"]
+        return [nil, false].include?(withheld) if withheld != true
+
+        fields["trials"].nil? && fields["fuzz_stop"].nil?
       end
 
       # Whether each of a report's rewrites carries sizes, trials, worlds and
