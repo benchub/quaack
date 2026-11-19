@@ -104,6 +104,23 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
       expect(copies(described_class.new(conn, [copy]))).to eq([%w[1 50], %w[2 1], %w[3 50], ["4", nil]])
     end
 
+    # Task 20261118-194818-1: a CHECK on the copy column's domain, or on
+    # the domain that domain is over, constrains it too.
+    {
+      "the copy column's domain" => ["CREATE DOMAIN cv.course_ref AS bigint CHECK (VALUE IN (1, 50))"],
+      "a domain under the copy column's domain" => ["CREATE DOMAIN cv.course_base AS bigint CHECK (VALUE IN (1, 50))",
+                                                    "CREATE DOMAIN cv.course_ref AS cv.course_base"]
+    }.each do |label, ddl|
+      it "sets only the class's rows when a CHECK on #{label} constrains the copy column" do
+        ddl.each { conn.exec(it) }
+        conn.exec("ALTER TABLE cv.submissions ALTER course_id TYPE cv.course_ref")
+        account = row("assignments", { "id" => 2, "context_type" => "Account", "context_id" => 60 })
+        rows.replace([*rows.first(2), account, *rows.last(4)])
+
+        expect(copies(described_class.new(conn, [copy]))).to eq([%w[1 50], %w[2 1], %w[3 50], ["4", nil]])
+      end
+    end
+
     # Task 20261007-31: the copy's comparisons are its columns' types' own
     # = (AssumptionCheck::Equality), named with their schema.
     it "sets the copy when public's text and bigint comparisons, ahead of pg_catalog's, say no" do

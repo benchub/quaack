@@ -13984,3 +13984,11 @@ The review of 20261114-170743-1 found that `INSERT ... VALUES (text('2024-01-01'
 - **Came from:** The review of 20261114-170743-1, 2026-11-18.
 - **Design:** llm-counterexamples.
 - **Status:** done (2026-11-18: new rule 14, after clock_literal, refuses a cast Postgres does through text, CoerceViaIO, when the source type's output or the target type's input function isn't IMMUTABLE; ResolvedCalls reads these from the shell view's stored tree. It also refuses text-to-date and date-to-text casts, since date_in and date_out are STABLE. The system prompt is unchanged)
+### 20261118-194818-1. Denormalized fixture: a domain CHECK on the copy column (minor from 20261011-5).
+
+The review of 20261011-5 found that `DenormalizedFixture`'s `CONSTRAINED` query misses a CHECK defined on a domain used as the copy column's type (it sits on `contypid`, not `conrelid`), so updates 2 and 3 still run and such a world fails to load. Rare; the cost is fewer worlds, not a false disproof. Fix by also checking the column type's domain constraints, or list it in DESIGN.md as unsupported in v1. Postgres test red first.
+
+- **Depends on:** 20261011-5 (landed).
+- **Came from:** The review of 20261011-5, 2026-11-18 (minor).
+- **Design:** rewrite-test.
+- **Status:** done (2026-11-18: the CONSTRAINED query also finds a CHECK on the copy column type's domain, walking domains over domains)

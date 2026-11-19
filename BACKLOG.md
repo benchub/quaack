@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261011-7
+- 20261118-194818-1
 - 20261115-073253-2
 - 20261115-073253-1
 - 20261011-11
@@ -509,15 +510,6 @@ From the build of 20261015-5. (1) `ARRAY(SELECT ...)` with no `ORDER BY`, or one
 - **Came from:** The build of 20261015-5, 2026-11-15.
 - **Design:** fixture-compare.
 - **Landed so far:** (2) and (3), with Postgres tests: a window `min` or `max` gets a check, and a window in an aggregate select with no GROUP BY picks nothing. (1) is listed in DESIGN.md as unsupported in v1, since the reordered loads are what catch it. (4) stays open: revisit if real runs hit those refusals.
-- **Status:** todo
-
-### 20261118-194818-1. Denormalized fixture: a domain CHECK on the copy column (minor from 20261011-5).
-
-The review of 20261011-5 found that `DenormalizedFixture`'s `CONSTRAINED` query misses a CHECK defined on a domain used as the copy column's type (it sits on `contypid`, not `conrelid`), so updates 2 and 3 still run and such a world fails to load. Rare; the cost is fewer worlds, not a false disproof. Fix by also checking the column type's domain constraints, or list it in DESIGN.md as unsupported in v1. Postgres test red first.
-
-- **Depends on:** 20261011-5 (landed).
-- **Came from:** The review of 20261011-5, 2026-11-18 (minor).
-- **Design:** rewrite-test.
 - **Status:** todo
 
 ### 20261118-204800-1. Differ: mark the server clock per statement in `official?` (minor from 20261012-52).

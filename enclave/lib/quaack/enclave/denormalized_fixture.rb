@@ -62,6 +62,15 @@ module Quaack
                        WHERE c.conrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass
                          AND c.contype OPERATOR(pg_catalog.=) ANY ('{c,x}'::pg_catalog.char[])
                          AND a.attname OPERATOR(pg_catalog.=) $2)
+            OR EXISTS (WITH RECURSIVE d(oid) AS (
+                         SELECT a.atttypid FROM pg_catalog.pg_attribute a
+                          WHERE a.attrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass
+                            AND a.attname OPERATOR(pg_catalog.=) $2
+                         UNION
+                         SELECT t.typbasetype FROM pg_catalog.pg_type t JOIN d ON t.oid OPERATOR(pg_catalog.=) d.oid
+                          WHERE t.typtype OPERATOR(pg_catalog.=) 'd')
+                       SELECT 1 FROM pg_catalog.pg_constraint c JOIN d ON c.contypid OPERATOR(pg_catalog.=) d.oid
+                        WHERE c.contype OPERATOR(pg_catalog.=) 'c')
       SQL
 
       module_function
