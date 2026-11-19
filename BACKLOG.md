@@ -5,6 +5,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 ## Unreleased enclave changes.
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
+- 20261119-044500-1
 - 20261118-223854-1
 - 20261119-001202-1
 - 20261010-47
@@ -73,17 +74,6 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 ## Added later.
 
 ### 20261010-47. Trust boundary: fuzz's trials, enumerate's worlds and bound can follow query literals. Done, see BACKLOG-COMPLETE.md.
-
-### 20261119-044500-1. Trust boundary: fuzz's trial count follows a count threshold through its stop rule, not only through time (from 20261010-47).
-
-The builder of 20261010-47 found that bucketing doesn't hold fuzz's `trials` the same across count thresholds. Even under `QUAACKS_FUZZ_TRIALS=100` (no clock), the correlated `count(...) > n` query's pass ran between 134 and 1000 compared trials for n = 0..10 (buckets 128 to 512), because the stop rule stops at twice the trial of the last new plan signature, and which signatures turn up follows the threshold. The real rule has the same dependence. Ask the user what to do: stop sending `trials` for a query with a count threshold (`Reach.threshold_paths`), send a fixed word instead, use a coarser bucket, or accept it and say so in DESIGN.md's "Counts across literals". Then hold it in `enclave/spec/across_literals_postgres_spec.rb`, red first. `fuzz_stop`'s `seconds` and `quiet`, times in the report payload, belong to the same question. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261010-47.
-- **Came from:** The builder of 20261010-47, 2026-11-19. Priority: trust boundary.
-- **Design:** rewrite-test ("Counts across literals").
-- **Open questions:** The option above.
-- **User's choice (2026-11-19):** send no trials, and none of `fuzz_stop`'s exact seconds, when either query has a count threshold; the report says the search ran without a number.
-- **Status:** todo
 
 ### 20260923-1. Postgres 17 parser under Postgres 18. Done, see BACKLOG-COMPLETE.md.
 

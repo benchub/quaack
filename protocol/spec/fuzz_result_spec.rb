@@ -32,6 +32,21 @@ RSpec.describe Quaack::Protocol::FuzzResult do
     expect(described_class.rewrites?([{ "trials" => 41_200 }])).to be(false)
   end
 
+  # Task 20261119-044500-1: a count-threshold search sends withheld true and
+  # then no trials and no fuzz_stop, which would follow the threshold.
+  it "accepts withheld only as nil, false or true, and with it true refuses trials and a fuzz_stop" do
+    stop = { "reason" => "dry", "seconds" => 41, "quiet" => 20 }
+    accepted = [{ "withheld" => true }, { "withheld" => true, "worlds" => 512, "bound" => 1 },
+                { "withheld" => false, "trials" => 8 }, { "withheld" => nil, "trials" => 8 }]
+    expect(accepted.map { described_class.rewrite_test?(it) }).to all(be(true))
+    refused = [{ "withheld" => true, "trials" => 8 }, { "withheld" => true, "trials" => 0 },
+               { "withheld" => "yes" }, { "withheld" => 1 }]
+    expect(refused.map { described_class.rewrite_test?(it) }).to all(be(false))
+    expect(described_class.rewrites?([{ "withheld" => true }, { "trials" => 8, "fuzz_stop" => stop }])).to be(true)
+    expect(described_class.rewrites?([{ "withheld" => true, "fuzz_stop" => stop }])).to be(false)
+    expect(described_class.rewrites?([{ "withheld" => true, "trials" => 8 }])).to be(false)
+  end
+
   # Task 20261012-3: enumerate's worlds compared, a count, and the row
   # bound it finished, 0 to 4.
   it "accepts a rewrite_test's worlds only as nil or a count, and its bound only as nil or 0 to 4" do

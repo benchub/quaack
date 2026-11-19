@@ -285,7 +285,17 @@ RSpec.describe Quaack::Enclave::Egress do
       expect(JSON.parse(out)).to include("bound" => 1, "tables" => 2)
     end
 
+    # Task 20261119-044500-1: a count-threshold search withholds its trials.
+    it "sends withheld for a count-threshold search, with no trials" do
+      out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, rule: nil,
+                             stage: "enumerate", trials: nil, withheld: true, worlds: 512, bound: 1)
+
+      expect(JSON.parse(out)).to include("withheld" => true, "trials" => nil, "worlds" => 512)
+    end
+
     [
+      ["trials beside withheld (20261119-044500-1)", { withheld: true, trials: 8 }],
+      ["a string where withheld belongs", { withheld: EGRESS_SENTINEL }],
       ["an error message as the rewrite's rule", { rule: "PG::Error: #{EGRESS_SENTINEL}" }],
       ["a number as the rewrite's rule", { rule: 5 }],
       ["a stage not on the list", { stage: EGRESS_SENTINEL }],
@@ -865,7 +875,12 @@ RSpec.describe Quaack::Enclave::Egress do
          { "fuzz_stop" => { "reason" => "deadline", "seconds" => 13, "quiet" => 11 } }],
         ["a spec's trials stop with times",
          { "fuzz_stop" => { "reason" => "trials", "seconds" => 41, "quiet" => 20 } }],
-        ["a stop under a Symbol key", { fuzz_stop: { "reason" => EGRESS_SENTINEL, "seconds" => 1, "quiet" => 1 } }]
+        ["a stop under a Symbol key", { fuzz_stop: { "reason" => EGRESS_SENTINEL, "seconds" => 1, "quiet" => 1 } }],
+        ["a stop beside withheld (20261119-044500-1)",
+         { "withheld" => true, "fuzz_stop" => { "reason" => "dry", "seconds" => 41, "quiet" => 20 } }],
+        ["trials beside withheld", { "withheld" => true, "trials" => 8 }],
+        ["a String in place of withheld", { "withheld" => EGRESS_SENTINEL }],
+        ["withheld under a Symbol key", { withheld: EGRESS_SENTINEL }]
       ].each do |what, planted|
         it "refuses one with #{what}, without quoting it" do
           refusal = "a value in this report message has fuzz sizes or trials that aren't the queries' tables " \

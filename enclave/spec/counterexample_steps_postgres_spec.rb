@@ -171,6 +171,22 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     # Task 20261012-4: what a rewrite_test message carries.
     let(:keys) { %w[type rewrite passed rule stage trials worlds bound tables] }
 
+    # Task 20261119-044500-1: with a count threshold in either query, the
+    # message, the stored result and the burndown carry no trials and no
+    # fuzz_stop, only withheld.
+    it "withholds trials and fuzz_stop for a count-threshold rewrite, everywhere they'd cross" do
+      ready("SELECT o.note, o.status FROM public.orders o WHERE o.note = $1 AND o.status = $2 " \
+            "AND (SELECT count(*) FROM public.orders i WHERE i.note = o.note) > 2")
+
+      outcome = searched
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+      message = lines(outcome).first
+      expect(message).to include("withheld" => true, "trials" => nil)
+      expect(tested).to include("withheld" => true, "trials" => nil, "fuzz_stop" => nil)
+      expect(burndown["stages"]["fuzz"]["rewrite_1"]["extra"]).not_to have_key("trials")
+    end
+
     it "passes an equivalent rewrite, stores its result, and doesn't decide survival yet" do
       ready(same)
 

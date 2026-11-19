@@ -112,7 +112,7 @@ module Quaack
             [{ type: :rewrite_test, rewrite: search, **result.slice(*MESSAGE_KEYS).transform_keys(&:to_sym) }]
           end
 
-          MESSAGE_KEYS = %w[passed rule stage trials worlds bound tables].freeze
+          MESSAGE_KEYS = %w[passed rule stage trials withheld worlds bound tables].freeze
 
           def discarded?(store, number)
             store.entry?("rewrite_pruned_#{number}") && store.read("rewrite_pruned_#{number}")["discarded"]
