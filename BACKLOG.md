@@ -547,24 +547,6 @@ The review of 20261113-210241-1 found that a disproof of `count(...) > n` rewrit
 - **Design:** rewrite-test.
 - **Status:** todo (waits on the user's choice)
 
-### 20261118-223225-1. ResolvedCalls: test that casts Postgres adds are left out (minor from 20261114-170743-1).
-
-The review of 20261114-170743-1 found that widening `ResolvedCalls`' funcformat match from `[03]` to `[0-3]` keeps every test green, so nothing shows that implicit casts Postgres adds are left to rule 12. Harmless today, since `resolved!` matches on the call's name. Add a test that goes red under that mutation.
-
-- **Depends on:** 20261114-170743-1 (landed).
-- **Came from:** The review of 20261114-170743-1, 2026-11-18 (minor).
-- **Design:** llm-counterexamples.
-- **Status:** todo
-
-### 20261118-223225-2. InsertCheck: a function-style cast such as `text(<timestamptz>)` is accepted though it's STABLE.
-
-The review of 20261114-170743-1 found that `INSERT ... VALUES (text('2024-01-01'::timestamptz))` is accepted, on main before that task too. The function-style cast becomes a STABLE CoerceViaIO, which neither the overload check nor the volatility check catches, and its result follows the session timezone. Refuse it (or catch CoerceViaIO of a non-immutable output function in the volatility check). Postgres test red first. Enclave change.
-
-- **Depends on:** None.
-- **Came from:** The review of 20261114-170743-1, 2026-11-18.
-- **Design:** llm-counterexamples.
-- **Status:** todo
-
 ### 20261118-231527-1. ResolvedCalls' shell view can run a non-strict type input function on NULL.
 
 The build and review of 20261118-223225-2 found that the rolled-back temporary view `ResolvedCalls` builds (from 20261114-170743-1) turns string constants into NULL, and Postgres then calls a cast type's input function on that NULL if the function isn't strict. With an internal-language test type that crashed the backend, which restarts every connection on the database. No ordinary user type can do this (it needs C or internal code), and citext, hstore and PostGIS have strict input functions, so it's unlikely, but serious when it happens. Fix: before building the view, refuse (or fall back) when any cast target type in the values has a non-strict input function (`pg_proc.proisstrict`). Postgres test red first. Enclave change.
