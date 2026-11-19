@@ -5,8 +5,11 @@ module Quaack
     module Fuzz
       module Enumerate
         # How long enumerate runs after a fuzz pass (task 20261012-3, the
-        # user's rule): SECONDS on the monotonic clock in production, inside
-        # the rewrite's Deadline. For specs, QUAACKS_ENUMERATE_WORLDS=<n>
+        # user's rule): WORLDS worlds tried in production (task
+        # 20261010-47), so the bound it reports is fixed by the worlds'
+        # order and never follows how long each takes, with SECONDS on the
+        # monotonic clock as a backstop (timed_out?), inside the rewrite's
+        # Deadline. A run the backstop or the Deadline stops reports no bound. For specs, QUAACKS_ENUMERATE_WORLDS=<n>
         # caps it at n worlds tried instead, so a spec's verdict never
         # depends on the machine's speed, and 0 turns it off, as
         # QUAACKS_FUZZ_TRIALS does the fuzz search (StopRule). When it's set,
@@ -20,12 +23,13 @@ module Quaack
 
         class Limit
           ENV_WORLDS = "QUAACKS_ENUMERATE_WORLDS"
+          WORLDS = 8192
           SECONDS = 30
           MONOTONIC = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
 
           def self.from_env(env)
             value = env[ENV_WORLDS]
-            return new(cap: SECONDS, clock: MONOTONIC) if value.nil?
+            return new(cap: WORLDS, clock: MONOTONIC) if value.nil?
             raise ArgumentError, "#{ENV_WORLDS} must be a whole number" unless value.match?(/\A(0|[1-9]\d*)\z/)
 
             worlds(Integer(value)) unless value == "0"
@@ -35,7 +39,9 @@ module Quaack
 
           def start = clock&.call
 
-          def over?(tried, started) = clock ? clock.call - started >= cap : tried >= cap
+          def over?(tried, started) = tried >= cap || timed_out?(started)
+
+          def timed_out?(started) = !clock.nil? && clock.call - started >= SECONDS
         end
       end
     end

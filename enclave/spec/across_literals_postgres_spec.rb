@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/enclave/fuzz"
+require "quaack/enclave/steps/rewrite_fuzz"
 
 # A standing trust-boundary guard (20261010-47, made the search's by task
 # 20261012-4): the per-atom caution crosses the boundary as the redacted
@@ -187,5 +188,36 @@ RSpec.describe "The search's caution across literals" do
       end
       expect(by_value.values.uniq).to eq([%i[disproved row_count]]), classes(by_value).join("\n")
     end
+  end
+
+  # Task 20261118-220251-1: a disproof of a count threshold shrinks to a
+  # parent with about the threshold's children, so its sizes say "5 or
+  # more" for every table, whatever the threshold.
+  it "sends a count-threshold disproof's sizes as 5 or more for every threshold" do
+    from, to = boundary.fetch("> as >=")
+    by_value = thresholds.to_h do |n|
+      results = fuzz.search(conn, correlated.call(from, n), correlated.call(to, n),
+                            stop: fuzz::StopRule.trials(400), enumerate: nil, seed: 7)
+      [n, results.fuzz.sizes]
+    end
+    expect(by_value.values.uniq.size).to eq(1), classes(by_value).join("\n")
+    expect(by_value.values.first.map(&:last).uniq).to eq([Quaack::Protocol::FuzzResult::MAX_SIZE])
+  end
+
+  # Task 20261010-47: what a rewrite_test sends of enumerate, its worlds as
+  # a power-of-two bucket and its bound, is the same for every threshold. A
+  # world cap stands in for production's (Limit::WORLDS), so the check
+  # holds what the code sends, not the machine's speed. Fuzz's trials
+  # aren't held here: even under a trial-count rule they follow when the
+  # search last found a new plan behaviour, which follows the threshold
+  # (DESIGN.md's rewrite-test, "What it sends").
+  it "sends the same bucketed worlds and bound for every count threshold" do
+    by_value = thresholds.to_h do |n|
+      sql = correlated.call(">", n)
+      results = fuzz.search(conn, sql, "#{sql} AND true", stop: fuzz::StopRule.trials(100),
+                                                          enumerate: fuzz::Enumerate::Limit.worlds(3000), seed: 7)
+      [n, Quaack::Enclave::Steps::RewriteFuzz.counts(results).slice("worlds", "bound")]
+    end
+    expect(by_value.values.uniq).to eq([{ "worlds" => 2048, "bound" => 1 }]), classes(by_value).join("\n")
   end
 end

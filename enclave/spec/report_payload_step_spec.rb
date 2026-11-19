@@ -104,7 +104,7 @@ RSpec.describe "quaacks report-payload" do
     # untested holds the redacted shapes of the atoms the search never
     # showed both ways, and untested_atoms their indexes into the
     # original's atoms, for counterexamples.
-    store.write("rewrite_tested_1", "passed" => true, "rule" => nil, "stage" => "fuzz", "trials" => 900,
+    store.write("rewrite_tested_1", "passed" => true, "rule" => nil, "stage" => "fuzz", "trials" => 512,
                                     "untested" => ["o.note = $2", "o.created_at > (now() - $1)"],
                                     "untested_atoms" => [0, 3],
                                     "untested_unchanged" => ["o.created_at > (now() - $1)"])
@@ -524,7 +524,7 @@ RSpec.describe "quaacks report-payload" do
 
       it "sends its untested shapes, and no scenario, dropped count, or untested states" do
         expect(rewrite(1)).to include("untested_atoms" => ["o.note = $2", "o.created_at > (now() - $1)"],
-                                      "trials" => 900, "fate" => "ranked")
+                                      "trials" => 512, "fate" => "ranked")
         expect(rewrite(1).keys & %w[scenario dropped untested_states s1_rows]).to eq([])
       end
     end
@@ -954,30 +954,30 @@ RSpec.describe "quaacks report-payload" do
           store.write("schema_subset", "tables" => [%w[public orders], %w[billing accounts], %w[billing secrets]],
                                        "ddl" => "")
           sizes = [["billing", "accounts", 1], ["public", "orders", 2]]
-          stored(store, 2, tested: fuzzed(false, "row_count", 120, sizes), survived: false)
+          stored(store, 2, tested: fuzzed(false, "row_count", 128, sizes), survived: false)
           store.write("rewrite_2", "sql" => sql, "source" => "llm")
-          stored(store, 3, tested: fuzzed(false, "value", 7, [["public", sentinel, 1]]), survived: false)
-          stored(store, 4, tested: fuzzed(false, "multiset", 7, [["billing", "secrets", 1]]), survived: false)
+          stored(store, 3, tested: fuzzed(false, "value", 8, [["public", sentinel, 1]]), survived: false)
+          stored(store, 4, tested: fuzzed(false, "multiset", 8, [["billing", "secrets", 1]]), survived: false)
           stored(store, 5, tested: fuzzed(false, "multiset", sentinel, [["public", "orders", "#{sentinel} rows"]]),
                            survived: false)
-          stored(store, 6, tested: tested(true).merge("stage" => "fuzz", "trials" => 41_200))
+          stored(store, 6, tested: tested(true).merge("stage" => "fuzz", "trials" => 32_768))
           stored(store, 7, tested: fuzzed(false, REPORT_WORD_SENTINEL, 3, []), survived: false)
-          stored(store, 8, tested: fuzzed(false, "query_failed", 9, [["public", "orders", 1]]), survived: false)
-          enumerated = { "stage" => "enumerate", "trials" => 40, "worlds" => 905, "bound" => 2, "tables" => 2 }
+          stored(store, 8, tested: fuzzed(false, "query_failed", 8, [["public", "orders", 1]]), survived: false)
+          enumerated = { "stage" => "enumerate", "trials" => 32, "worlds" => 512, "bound" => 2, "tables" => 2 }
           stored(store, 9, tested: tested(false, nil, "value").merge(enumerated, "sizes" => [["public", "orders", 2]]),
                            survived: false)
           stored(store, 10, tested: tested(true).merge(enumerated, "fuzz_stop" => stop))
-          stored(store, 11, tested: tested(true).merge("stage" => "enumerate", "trials" => 40,
+          stored(store, 11, tested: tested(true).merge("stage" => "enumerate", "trials" => 32,
                                                        "worlds" => sentinel, "bound" => 37, "tables" => 37,
                                                        "fuzz_stop" => stop.merge("reason" => sentinel)))
-          stored(store, 12, tested: tested(true).merge("trials" => 40, "fuzz_stop" => stop.merge("seconds" => 4.2)))
+          stored(store, 12, tested: tested(true).merge("trials" => 32, "fuzz_stop" => stop.merge("seconds" => 4.2)))
         end
       end
 
       # Task 20261012-3.
       it "says enumerate disproved one, with the rule, the rows per table, trials, worlds and bound" do
-        expect(rewrite(9)).to include("fate" => "enumerate_disproved", "rule" => "value", "trials" => 40,
-                                      "worlds" => 905, "bound" => 2, "sizes" => [["public", "orders", 2]])
+        expect(rewrite(9)).to include("fate" => "enumerate_disproved", "rule" => "value", "trials" => 32,
+                                      "worlds" => 512, "bound" => 2, "sizes" => [["public", "orders", 2]])
       end
 
       let(:stop) { { "reason" => "dry", "seconds" => 41, "quiet" => 20 } }
@@ -992,31 +992,31 @@ RSpec.describe "quaacks report-payload" do
       end
 
       it "sends an enumerate pass's worlds, bound and tables, and none that aren't a count and a bound" do
-        expect(rewrite(10)).to include("trials" => 40, "worlds" => 905, "bound" => 2, "tables" => 2, "sizes" => nil)
-        expect(rewrite(11)).to include("trials" => 40, "worlds" => nil, "bound" => nil, "tables" => nil)
+        expect(rewrite(10)).to include("trials" => 32, "worlds" => 512, "bound" => 2, "tables" => 2, "sizes" => nil)
+        expect(rewrite(11)).to include("trials" => 32, "worlds" => nil, "bound" => nil, "tables" => nil)
         expect(rewrite(6)).to include("worlds" => nil, "bound" => nil, "tables" => nil)
         expect_no_leaks(sentinels, outcome)
       end
 
       it "says fuzz disproved one that failed where the original ran, by query_failed, with its rows per table" do
-        expect(rewrite(8)).to include("fate" => "fuzz_disproved", "rule" => "query_failed", "trials" => 9,
+        expect(rewrite(8)).to include("fate" => "fuzz_disproved", "rule" => "query_failed", "trials" => 8,
                                       "sizes" => [["public", "orders", 1]])
       end
 
       it "says fuzz disproved it, with the rule, the rows per table, and the trials" do
-        expect(rewrite(2)).to include("fate" => "fuzz_disproved", "rule" => "row_count", "trials" => 120,
+        expect(rewrite(2)).to include("fate" => "fuzz_disproved", "rule" => "row_count", "trials" => 128,
                                       "sizes" => [["billing", "accounts", 1], ["public", "orders", 2]])
       end
 
       it "sends no sizes that name a table neither query names, or aren't counts, and no trials that aren't" do
         expect([3, 4, 5].map { rewrite(it).slice("fate", "sizes") })
           .to all(include("fate" => "fuzz_disproved", "sizes" => nil))
-        expect([3, 4, 5].map { rewrite(it)["trials"] }).to eq([7, 7, nil])
+        expect([3, 4, 5].map { rewrite(it)["trials"] }).to eq([8, 8, nil])
         expect_no_leaks(sentinels, outcome)
       end
 
       it "sends a fuzz pass's trials, with no sizes" do
-        expect(rewrite(6)).to include("trials" => 41_200, "sizes" => nil)
+        expect(rewrite(6)).to include("trials" => 32_768, "sizes" => nil)
       end
 
       it "claims no disproof for a rule that isn't the comparison's" do
@@ -1294,7 +1294,7 @@ RSpec.describe "quaacks report-payload" do
       context "with a rule-made rewrite enumerate disproved" do
         let(:outcome) do
           with_rewrite do |store|
-            rule_made(store, 2, tested(false, "value").merge("stage" => "enumerate", "trials" => 40, "worlds" => 9,
+            rule_made(store, 2, tested(false, "value").merge("stage" => "enumerate", "trials" => 32, "worlds" => 9,
                                                              "bound" => 1, "sizes" => []), false)
           end
         end

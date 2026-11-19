@@ -139,10 +139,11 @@ module Quaack
         NONE = { "untested" => [], "untested_atoms" => [], "untested_unchanged" => [] }.freeze
 
         # fuzz's trials and why it stopped, and enumerate's worlds and bound
-        # (0 and nil when it didn't run).
+        # (0 and nil when it didn't run), trials and worlds as
+        # Protocol::FuzzResult.bucket gives them (task 20261010-47).
         def counts(results)
-          { "trials" => results.fuzz.trials, "fuzz_stop" => results.fuzz.stop, "worlds" => results.enumerate.worlds,
-            "bound" => results.enumerate.bound }
+          { "trials" => Protocol::FuzzResult.bucket(results.fuzz.trials), "fuzz_stop" => results.fuzz.stop,
+            "worlds" => Protocol::FuzzResult.bucket(results.enumerate.worlds), "bound" => results.enumerate.bound }
         end
 
         # A rewrite the search couldn't test, gone on with why as its rule.
