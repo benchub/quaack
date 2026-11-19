@@ -14112,3 +14112,13 @@ The review of 20261010-47 found: (1) `search_note` in `driver/lib/quaack/driver/
 - **Came from:** The review of 20261010-47, 2026-11-19 (minor).
 - **Design:** report.
 - **Status:** done
+
+### 20261020-2. redact-rewrite: resolve a column reached through a CTE's name.
+
+Split from 20261019-4. A rewrite that moves a predicate into a CTE and filters it from outside (`WITH x AS (SELECT * FROM orders WHERE status = 'a') SELECT * FROM x WHERE x.user_id = 5`) names the column through the CTE, `x.user_id`. The matcher resolves `x` as a table called `x`, so it finds no comparison in the original (`orders.user_id`) and refuses `redact_rewrite_no_match`. Take a CTE name map from the enclosing WITH clauses, and resolve a CTE that selects `*` or the column straight from one table to that table. Anything it can't resolve stays a clean refusal. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261019-3.
+- **Came from:** The builder of 20261019-4, 2026-10-20.
+- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
+- **Open questions:** None.
+- **Status:** done
