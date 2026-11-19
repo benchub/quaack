@@ -34,6 +34,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261114-170743-1
 - 20261118-223225-1
 - 20261118-223225-2
+- 20261119-001742-1
 
 
 ## How this file works.
@@ -582,13 +583,3 @@ The review of 20261118-185846-1 found: (1) when a cut cycle key is a foreign key
 - **Came from:** The review of 20261118-185846-1, 2026-11-18 (minor).
 - **Design:** rewrite-test (fuzz worlds).
 - **Status:** todo
-
-### 20261119-001742-1. InsertCheck: a function-backed assignment cast such as timestamptz into a date column is accepted (from 20261118-223225-2).
-
-The second review of 20261118-223225-2 found that `INSERT INTO t (d) VALUES ('2024-01-01 00:00+00'::timestamptz)` into a date column is accepted. The assignment runs `timestamptz_date`, which is STABLE and follows TimeZone. It isn't a cast through text, so rule 14 misses it; ResolvedCalls leaves out casts Postgres adds, and the volatility check judges the rows without the column cast. Judge the FuncExpr casts the column wrapper adds (they show in the shell view), or refuse them cleanly. Postgres test red first. Enclave change.
-
-- **Depends on:** 20261118-223225-2 (landed).
-- **Came from:** The second review of 20261118-223225-2, 2026-11-18 (minor).
-- **Design:** llm-counterexamples.
-- **Status:** todo
-

@@ -82,7 +82,10 @@ module Quaack
     #     timestamptz_out, date_in, and date_out are (task
     #     20261118-223225-2). ResolvedCalls finds these casts. A string
     #     constant cast straight to date isn't one, so rule 12 still holds
-    #     '2024-01-01'::date only to the volatility rule.
+    #     '2024-01-01'::date only to the volatility rule. A cast with a
+    #     function counts too, the assignment to the column included, so
+    #     a timestamptz into a date column, which runs the STABLE
+    #     date(timestamptz), is refused (task 20261119-001742-1).
     # 15. deparse_mismatch: the insert doesn't parse back to the same tree
     #     when pg_query deparses it (see Deparse).
     #
