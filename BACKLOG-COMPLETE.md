@@ -13984,3 +13984,12 @@ The review of 20261114-170743-1 found that `INSERT ... VALUES (text('2024-01-01'
 - **Came from:** The review of 20261114-170743-1, 2026-11-18.
 - **Design:** llm-counterexamples.
 - **Status:** done (2026-11-18: new rule 14, after clock_literal, refuses a cast Postgres does through text, CoerceViaIO, when the source type's output or the target type's input function isn't IMMUTABLE; ResolvedCalls reads these from the shell view's stored tree. It also refuses text-to-date and date-to-text casts, since date_in and date_out are STABLE. The system prompt is unchanged)
+
+### 20261119-000039-1. Window picks: two unaliased FROM subqueries end as `pick_run_failed` (minor from 20261115-073253-2).
+
+20261115-073253-2 names an unaliased FROM subquery `quaack_pick_from` in the forced copy. Two unaliased subqueries in one FROM, or one beside a FROM item already named `quaack_pick_from`, collide, and the comparison ends as `pick_run_failed` (`unsupported_order`) instead of a clean refusal. No wrong match, no leak. Fix: number the aliases, or raise `Unforceable` when the name is taken. Postgres test red first.
+
+- **Depends on:** 20261115-073253-2 (landed).
+- **Came from:** The review of 20261115-073253-2, 2026-11-18 (minor).
+- **Design:** fixture-compare.
+- **Status:** done. Each unaliased FROM subquery gets its own `quaack_pick_from` name, numbered past every string in the query.

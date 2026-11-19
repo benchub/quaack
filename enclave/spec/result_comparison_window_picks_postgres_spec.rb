@@ -142,4 +142,17 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     expect(fields(compare(keyed, loose))).to eq(match: false, rule: :multiset)
     expect(fields(compare(loose, keyed))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
   end
+  # 20261119-000039-1: each unaliased subquery gets its own name, one that
+  # no name in the query already takes.
+  it "forces a window over two unaliased FROM subqueries, and beside one already named quaack_pick_from" do
+    ["(SELECT * FROM items), (SELECT 1 AS one)",
+     "(SELECT * FROM items), (SELECT 1 AS one) quaack_pick_from"].each do |from|
+      unaliased = ->(key) { "SELECT grp, label FROM (SELECT *, #{key} AS rn FROM #{from}) s WHERE rn = 1" }
+      keyed = unaliased.call("row_number() OVER (PARTITION BY grp ORDER BY label)")
+      loose = unaliased.call("row_number() OVER (PARTITION BY grp)")
+
+      expect(fields(compare(keyed, keyed))).to eq(match: true, rule: nil)
+      expect(fields(compare(loose, keyed))).to eq(match: false, rule: :unsupported_order, reason: :original_pick)
+    end
+  end
 end

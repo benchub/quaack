@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261011-7
 - 20261115-073253-2
+- 20261119-000039-1
 - 20261115-073253-1
 - 20261011-11
 - 20261012-8
@@ -563,15 +564,6 @@ After 20261118-223225-2, any cast of a date or timestamp to text or varchar is r
 - **Depends on:** 20261118-223225-2.
 - **Came from:** The review of 20261118-223225-2, 2026-11-18 (minor).
 - **Design:** llm-counterexamples.
-- **Status:** todo
-
-### 20261119-000039-1. Window picks: two unaliased FROM subqueries end as `pick_run_failed` (minor from 20261115-073253-2).
-
-20261115-073253-2 names an unaliased FROM subquery `quaack_pick_from` in the forced copy. Two unaliased subqueries in one FROM, or one beside a FROM item already named `quaack_pick_from`, collide, and the comparison ends as `pick_run_failed` (`unsupported_order`) instead of a clean refusal. No wrong match, no leak. Fix: number the aliases, or raise `Unforceable` when the name is taken. Postgres test red first.
-
-- **Depends on:** 20261115-073253-2 (landed).
-- **Came from:** The review of 20261115-073253-2, 2026-11-18 (minor).
-- **Design:** fixture-compare.
 - **Status:** todo
 
 ### 20261119-001202-1. Fuzz cut keys: a partitioned table's inherited FK, and a test that a dangling cut key fails to load (minors from 20261118-185846-1).
