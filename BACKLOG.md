@@ -82,6 +82,7 @@ The builder of 20261010-47 found that bucketing doesn't hold fuzz's `trials` the
 - **Came from:** The builder of 20261010-47, 2026-11-19. Priority: trust boundary.
 - **Design:** rewrite-test ("Counts across literals").
 - **Open questions:** The option above.
+- **User's choice (2026-11-19):** send no trials, and none of `fuzz_stop`'s exact seconds, when either query has a count threshold; the report says the search ran without a number.
 - **Status:** todo
 
 ### 20260923-1. Postgres 17 parser under Postgres 18. Done, see BACKLOG-COMPLETE.md.
