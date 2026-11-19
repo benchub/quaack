@@ -35,8 +35,9 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
   EMPTY = Variant.new(llm: nil, k: nil)
 
   # The worlds the enumerate replay caps enumerate at (task 20261012-29):
-  # enough to finish a bound of 1 for group_having's sound rewrites.
-  ENUMERATE_REPLAY_WORLDS = 300
+  # enough to finish a bound of 1 for group_having's sound rewrites. A power of
+  # two, since the report buckets world counts down to one (20261119-044500-1).
+  ENUMERATE_REPLAY_WORLDS = 256
 
   # What one replayed run did. log has one line per ask: its directory and
   # whether it was replayed or fell back. drift names replayed asks whose

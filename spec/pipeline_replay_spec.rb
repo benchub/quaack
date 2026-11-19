@@ -185,8 +185,8 @@ RSpec.describe PipelineReplay do
             .to include("rewrite_1" => [1, 1], "rewrite_3" => [1, 1])
           sentences = outcome.html.scan(/[^<>]*enumerated in order of size[^<>]*/)
           expect(sentences.size).to eq(2)
-          expect(sentences).to all(include(", then #{worlds} enumerated in order of size, which covered every " \
-                                           "data set of up to 1 row built from the query&#39;s own values (its " \
+          expect(sentences).to all(include(", then at least #{worlds} enumerated in order of size, which covered " \
+                                           "every data set of up to 1 row built from the query&#39;s own values (its " \
                                            "constants, values next to them, and NULL)."))
         end
       end
