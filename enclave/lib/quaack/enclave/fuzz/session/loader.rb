@@ -77,14 +77,15 @@ module Quaack
           # Each cut key is made deferrable, so a world loads with it
           # checked only once every insert has run (SET CONSTRAINTS ...
           # IMMEDIATE), and rows that close a cycle load in the world's
-          # order (task 20261118-185846-1).
+          # order (task 20261118-185846-1). One a partition inherits is
+          # altered where it was declared, since Postgres refuses it on the
+          # partition, and the change reaches the partition's copy. One
+          # empty dropped, declared on a parent outside the footprint, is
+          # left out (task 20261119-001202-1).
           def prepare
             empty
             @catalog.dropped.each { @conn.exec("ALTER TABLE #{table_sql(it.child)} DROP CONSTRAINT #{quote(it.name)}") }
-            @cut.each do |key|
-              @conn.exec("ALTER TABLE #{table_sql(key.child)} ALTER CONSTRAINT #{quote(key.name)} " \
-                         "DEFERRABLE INITIALLY DEFERRED")
-            end
+            @deferred = @cut.select { defer(it) }
             @updates = capture
           end
 
@@ -97,6 +98,12 @@ module Quaack
 
           private
 
+          # Makes key deferrable where it was declared; false if it's gone.
+          def defer(key)
+            table, name = @conn.exec_params(Catalog::DECLARED_SQL, [table_sql(key.child), key.name]).values.first
+            name && @conn.exec("ALTER TABLE #{table} ALTER CONSTRAINT #{quote(name)} DEFERRABLE INITIALLY DEFERRED")
+          end
+
           def empty
             tables = @catalog.footprint.map { table_sql(it) }
             references = @conn.exec_params(REFERENCES_SQL, [PG::TextEncoder::Array.new.encode(tables)]).values
@@ -107,9 +114,9 @@ module Quaack
           end
 
           def deferring(mode)
-            return [] if @cut.empty?
+            return [] if @deferred.empty?
 
-            names = @cut.map { "#{quote(it.child.schema)}.#{quote(it.name)}" }.uniq.join(", ")
+            names = @deferred.map { "#{quote(it.child.schema)}.#{quote(it.name)}" }.uniq.join(", ")
             ["SET CONSTRAINTS #{names} #{mode}"]
           end
 

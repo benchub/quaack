@@ -14018,3 +14018,13 @@ From 20261118-185846-1. Enumerate's worlds (`Fuzz::Enumerate::Worlds`) give a cu
 - **Came from:** The review of 20261115-073253-2, 2026-11-18 (minor).
 - **Design:** fixture-compare.
 - **Status:** done. Each unaliased FROM subquery gets its own `quaack_pick_from` name, numbered past every string in the query.
+### 20261119-001202-1. Fuzz cut keys: a partitioned table's inherited FK, and a test that a dangling cut key fails to load (minors from 20261118-185846-1).
+
+The review of 20261118-185846-1 found: (1) when a cut cycle key is a foreign key a partition inherits, `ALTER CONSTRAINT ... DEFERRABLE` on the child errors and aborts the session's `prepare`; refuse cleanly or alter it at the parent. Rare. (2) No spec plants a dangling cut-key value to prove `SET CONSTRAINTS ... IMMEDIATE` rejects the world. Postgres tests red first.
+
+- **Depends on:** 20261118-185846-1 (landed).
+- **Came from:** The review of 20261118-185846-1, 2026-11-18 (minor).
+- **Design:** rewrite-test (fuzz worlds).
+- **Status:** done
+
+Built: Loader#prepare alters a cut key where it was declared (a partition's inherited FK at its root) and skips one TRUNCATE's prep already dropped; `enclave/spec/fuzz_cut_keys_postgres_spec.rb` covers both partition cases and a planted dangling cut key. Also dropped the dead `cut?` in fuzz/enumerate/worlds.rb.

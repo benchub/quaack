@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 - 20261118-223854-1
+- 20261119-001202-1
 
 - 20261011-7
 - 20261118-194818-1
@@ -359,10 +360,6 @@ From 20261012-52, bullet 1. A rewrite rewrite-test's search couldn't test goes o
 - **Open questions:** Whether to do it, and whether the replay drift is acceptable.
 - **Status:** todo
 
-### 20261118-185846-1. Fuzz and enumerate pass a wrong rewrite that needs both edges of an FK cycle filled. Done, see BACKLOG-COMPLETE.md; the enumerate half is 20261118-223854-1.
-
-### 20261118-223854-1. Enumerate leaves an FK cycle's cut key NULL. Done, see BACKLOG-COMPLETE.md.
-
 ### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261015-4. Result-comparison on the racetrack doesn't check inner cuts or picks.
@@ -542,15 +539,6 @@ After 20261118-223225-2, any cast of a date or timestamp to text or varchar is r
 - **Depends on:** 20261118-223225-2.
 - **Came from:** The review of 20261118-223225-2, 2026-11-18 (minor).
 - **Design:** llm-counterexamples.
-- **Status:** todo
-
-### 20261119-001202-1. Fuzz cut keys: a partitioned table's inherited FK, and a test that a dangling cut key fails to load (minors from 20261118-185846-1).
-
-The review of 20261118-185846-1 found: (1) when a cut cycle key is a foreign key a partition inherits, `ALTER CONSTRAINT ... DEFERRABLE` on the child errors and aborts the session's `prepare`; refuse cleanly or alter it at the parent. Rare. (2) No spec plants a dangling cut-key value to prove `SET CONSTRAINTS ... IMMEDIATE` rejects the world. Postgres tests red first.
-
-- **Depends on:** 20261118-185846-1 (landed).
-- **Came from:** The review of 20261118-185846-1, 2026-11-18 (minor).
-- **Design:** rewrite-test (fuzz worlds).
 - **Status:** todo
 
 ### 20261119-001742-1. InsertCheck: a function-backed assignment cast such as timestamptz into a date column is accepted (from 20261118-223225-2).

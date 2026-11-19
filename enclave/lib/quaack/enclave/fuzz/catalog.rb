@@ -39,6 +39,22 @@ module Quaack
           ORDER BY c.conname
         SQL
 
+        # Where a foreign key was declared, as the table's SQL and the
+        # constraint's name: its own table's, or the ancestor's a partition
+        # inherited it from (Session::Loader, task 20261119-001202-1).
+        DECLARED_SQL = <<~SQL
+          WITH RECURSIVE up AS (
+            SELECT oid, conparentid, conrelid, conname FROM pg_catalog.pg_constraint
+            WHERE conrelid OPERATOR(pg_catalog.=) $1::pg_catalog.regclass
+              AND conname OPERATOR(pg_catalog.=) $2 AND contype OPERATOR(pg_catalog.=) 'f'
+            UNION ALL
+            SELECT p.oid, p.conparentid, p.conrelid, p.conname FROM pg_catalog.pg_constraint p
+            JOIN up ON p.oid OPERATOR(pg_catalog.=) up.conparentid
+          )
+          SELECT conrelid::pg_catalog.regclass::pg_catalog.text, conname FROM up
+          WHERE conparentid OPERATOR(pg_catalog.=) 0
+        SQL
+
         attr_reader :footprint, :schema, :kept, :dropped
 
         def initialize(conn, footprint)
