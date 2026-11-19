@@ -5,6 +5,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 ## Unreleased enclave changes.
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
+- 20261118-223854-1
 
 - 20261011-7
 - 20261115-073253-2
@@ -355,14 +356,7 @@ From 20261012-52, bullet 1. A rewrite rewrite-test's search couldn't test goes o
 
 ### 20261118-185846-1. Fuzz and enumerate pass a wrong rewrite that needs both edges of an FK cycle filled. Done, see BACKLOG-COMPLETE.md; the enumerate half is 20261118-223854-1.
 
-### 20261118-223854-1. Enumerate leaves an FK cycle's cut key NULL.
-
-From 20261118-185846-1. Enumerate's worlds (`Fuzz::Enumerate::Worlds`) give a cut cycle key one fixed value, NULL, so no enumerated world fills both edges of a cycle, and enumerate alone still passes the dropped `where.missing` anti join on `accounts.course_template_id`. Give a nullable cut key the parent keys of the world (as fuzz's Draw now does), load through the same deferred cut constraints, and test first in `enclave/spec/fuzz_fk_cycle_postgres_spec.rb` with fuzz stopped at zero trials. Keep the world count bounded. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261118-185846-1.
-- **Came from:** The build of 20261118-185846-1, 2026-11-18.
-- **Design:** rewrite-test (enumerate).
-- **Status:** todo
+### 20261118-223854-1. Enumerate leaves an FK cycle's cut key NULL. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error. Done, see BACKLOG-COMPLETE.md.
 
