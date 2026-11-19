@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261011-7
+- 20261115-073253-2
 - 20261115-073253-1
 - 20261011-11
 - 20261012-8
@@ -505,15 +506,6 @@ From the build of 20261015-5. (1) `ARRAY(SELECT ...)` with no `ORDER BY`, or one
 - **Landed so far:** (2) and (3), with Postgres tests: a window `min` or `max` gets a check, and a window in an aggregate select with no GROUP BY picks nothing. (1) is listed in DESIGN.md as unsupported in v1, since the reordered loads are what catch it. (4) stays open: revisit if real runs hit those refusals.
 - **Status:** todo
 
-### 20261115-073253-2. Window picks: an unaliased FROM subquery, and GROUPING SETS with a window.
-
-From the review of 20261015-5 (minor). (1) A Postgres 16+ unaliased FROM subquery (`SELECT *, row_number() OVER (...) rn FROM (SELECT * FROM items)`) refuses as `unforceable_pick` where the aliased form matches. Support it or list it in DESIGN.md as unsupported in v1. (2) `GROUP BY GROUPING SETS` or `ROLLUP` with a window function may end as `pick_run_failed` rather than a clean refusal (the reviewer's guess, untested). Test first, then refuse cleanly.
-
-- **Depends on:** 20261015-5 (landed).
-- **Came from:** The review of 20261015-5, 2026-11-15 (minor).
-- **Design:** fixture-compare.
-- **Status:** todo
-
 ### 20261118-194818-1. Denormalized fixture: a domain CHECK on the copy column (minor from 20261011-5).
 
 The review of 20261011-5 found that `DenormalizedFixture`'s `CONSTRAINED` query misses a CHECK defined on a domain used as the copy column's type (it sits on `contypid`, not `conrelid`), so updates 2 and 3 still run and such a world fails to load. Rare; the cost is fewer worlds, not a false disproof. Fix by also checking the column type's domain constraints, or list it in DESIGN.md as unsupported in v1. Postgres test red first.
@@ -584,5 +576,14 @@ After 20261118-223225-2, any cast of a date or timestamp to text or varchar is r
 - **Depends on:** 20261118-223225-2.
 - **Came from:** The review of 20261118-223225-2, 2026-11-18 (minor).
 - **Design:** llm-counterexamples.
+- **Status:** todo
+
+### 20261119-000039-1. Window picks: two unaliased FROM subqueries end as `pick_run_failed` (minor from 20261115-073253-2).
+
+20261115-073253-2 names an unaliased FROM subquery `quaack_pick_from` in the forced copy. Two unaliased subqueries in one FROM, or one beside a FROM item already named `quaack_pick_from`, collide, and the comparison ends as `pick_run_failed` (`unsupported_order`) instead of a clean refusal. No wrong match, no leak. Fix: number the aliases, or raise `Unforceable` when the name is taken. Postgres test red first.
+
+- **Depends on:** 20261115-073253-2 (landed).
+- **Came from:** The review of 20261115-073253-2, 2026-11-18 (minor).
+- **Design:** fixture-compare.
 - **Status:** todo
 

@@ -13949,3 +13949,12 @@ The part of 20261012-12 that didn't land (the user said yes to it on 2026-10-12)
 - **Came from:** 20261012-12 (not landed part).
 - **Design:** llm-counterexamples.
 - **Status:** done (2026-11-18: a rolled-back temporary view of a NULLed copy of the insert tells which overload Postgres resolves)
+
+### 20261115-073253-2. Window picks: an unaliased FROM subquery, and GROUPING SETS with a window.
+
+From the review of 20261015-5 (minor). (1) A Postgres 16+ unaliased FROM subquery (`SELECT *, row_number() OVER (...) rn FROM (SELECT * FROM items)`) refuses as `unforceable_pick` where the aliased form matches. Support it or list it in DESIGN.md as unsupported in v1. (2) `GROUP BY GROUPING SETS` or `ROLLUP` with a window function may end as `pick_run_failed` rather than a clean refusal (the reviewer's guess, untested). Test first, then refuse cleanly.
+
+- **Depends on:** 20261015-5 (landed).
+- **Came from:** The review of 20261015-5, 2026-11-15 (minor).
+- **Design:** fixture-compare.
+- **Status:** done (2026-11-18: an unaliased FROM subquery gets an alias in the forced copy, so its window picks force like the aliased form; GROUPING SETS and ROLLUP already refuse up front as unsupported_construct, so they never reach the pick run)
