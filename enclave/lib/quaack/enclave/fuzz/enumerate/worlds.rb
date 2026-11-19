@@ -233,15 +233,12 @@ module Quaack
             key.columns.zip(key.parent_columns).each { |c, p| row.cells[c] = parent&.cells&.[](p) }
           end
 
-          # The rows a key can point to, and NULL where it allows it.
-          # A cut key, which closed a cycle, is always nullable, and its
-          # parent's rows are all in by_table by now: the session loads it
+          # The rows a key can point to, and NULL where it allows it. A cut
+          # key's parent rows are all in by_table by now: the session loads it
           # with the cut constraint deferred (task 20261118-223854-1).
           def parents(key, by_table)
-            by_table.fetch(key.parent, []) + (@plan.fk_nullable?(key) || cut?(key) ? [nil] : [])
+            by_table.fetch(key.parent, []) + (@plan.fk_nullable?(key) ? [nil] : [])
           end
-
-          def cut?(key) = @cuts.values.any? { it.include?(key) }
         end
       end
     end
