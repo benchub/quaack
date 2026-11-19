@@ -98,6 +98,29 @@ RSpec.describe Quaack::Enclave::Fuzz::Differ do
       end
     end
 
+    # Task 20261118-204800-1: each statement in the official comparison
+    # gets its own clock mark, so a foreign cancel on the candidate, after
+    # the original ran past the timeout, isn't read as QUAACK's timeout.
+    # The candidate's first call fails the multiset statement, so the
+    # official comparison runs; its second cancels itself.
+    it "ends the step on a foreign cancel of the candidate after a slow original" do
+      conn.exec(<<~SQL)
+        CREATE SEQUENCE d.calls;
+        CREATE FUNCTION d.cancel_later() RETURNS boolean LANGUAGE plpgsql AS $$
+        BEGIN
+          IF nextval('d.calls') = 1 THEN RAISE EXCEPTION 'first call'; END IF;
+          PERFORM pg_cancel_backend(pg_backend_pid());
+          PERFORM pg_sleep(5);
+          RETURN true;
+        END $$;
+      SQL
+      slow_original = "SELECT d.t.id FROM d.t, pg_catalog.pg_sleep(0.4)"
+      candidate = "SELECT d.t.id FROM d.t WHERE d.cancel_later()"
+
+      expect { described_class.differing(conn, slow_original, [candidate], statement_timeout_ms: 300) }
+        .to raise_error(Quaack::Enclave::ArenaRunner::Error) { expect(it.rule).to eq(:statement_canceled) }
+    end
+
     it "counts QUAACK's own timeout as no difference, and still judges the rest" do
       conn.exec("SET LOCAL statement_timeout = 300")
       expect(run([slow, "SELECT d.t.id FROM d.t WHERE true"], 300)).to eq([1])

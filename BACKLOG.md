@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261011-7
 - 20261115-073253-2
 - 20261115-073253-1
+- 20261118-204800-1
 - 20261011-11
 - 20261012-8
 - 20261012-9
@@ -512,15 +513,6 @@ The review of 20261011-5 found that `DenormalizedFixture`'s `CONSTRAINED` query 
 
 - **Depends on:** 20261011-5 (landed).
 - **Came from:** The review of 20261011-5, 2026-11-18 (minor).
-- **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261118-204800-1. Differ: mark the server clock per statement in `official?` (minor from 20261012-52).
-
-The second review of 20261012-52 found that `Fuzz::Differ#official?` runs the original and the candidate under one savepoint and one `ServerClock.mark`. A foreign cancel that lands after more than the statement timeout has passed across both statements reads as QUAACK's own timeout and counts as "no difference". Narrow, and only near the timeout; it errs toward leaving an atom untested. Fix by marking the clock per statement. Postgres test red first. Enclave change.
-
-- **Depends on:** 20261012-52 (landed).
-- **Came from:** The second review of 20261012-52, 2026-11-18 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
 
