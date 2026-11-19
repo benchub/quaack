@@ -187,6 +187,67 @@ RSpec.describe Quaack::Enclave::RewriteRedaction do
       .to eq("redact_rewrite_no_match")
   end
 
+  describe "a column reached through a CTE's name (20261020-2)" do
+    it "resolves a CTE that selects * from one table, as an ORM moves a filter into a CTE" do
+      sql = "WITH scoped AS (SELECT * FROM orders WHERE orders.status = '#{sentinel}') " \
+            "SELECT scoped.id FROM scoped WHERE scoped.total > 1000 AND scoped.kind IN ('a', 'b')"
+      out = redact(sql)
+      expect(out).to eq("WITH scoped AS (SELECT * FROM orders WHERE orders.status = $1) " \
+                        "SELECT scoped.id FROM scoped WHERE scoped.total > $3 AND scoped.kind IN ($4, $5)")
+      expect(out).not_to include(sentinel, "1000", "'a'")
+    end
+
+    it "resolves a CTE that selects the column straight from one table, under an alias" do
+      expect(redact("WITH x AS (SELECT o.id, o.total FROM orders o) SELECT y.id FROM x y WHERE y.total > 7"))
+        .to eq("WITH x AS (SELECT o.id, o.total FROM orders o) SELECT y.id FROM x y WHERE y.total > $3")
+      expect(redact("WITH x AS (SELECT o.total AS t FROM orders o) SELECT x.t FROM x WHERE x.t > 7"))
+        .to eq("WITH x AS (SELECT o.total AS t FROM orders o) SELECT x.t FROM x WHERE x.t > $3")
+    end
+
+    it "refuses a column the CTE doesn't select straight from its table" do
+      expect(refusal("WITH x AS (SELECT o.id, o.user_id AS total FROM orders o) SELECT x.id FROM x WHERE x.total > 7")
+        .rule).to eq("redact_rewrite_no_match")
+      expect(refusal("WITH x AS (SELECT * FROM orders JOIN users ON users.id = orders.user_id) " \
+                     "SELECT x.id FROM x WHERE x.total > 7").rule).to eq("redact_rewrite_no_match")
+    end
+
+    it "lets a nearer WITH's name shadow an outer CTE of the same name" do
+      expect(refusal("WITH x AS (SELECT * FROM orders) SELECT * FROM (WITH x AS (SELECT * FROM users) " \
+                     "SELECT x.id FROM x WHERE x.total > 7) s").rule).to eq("redact_rewrite_no_match")
+      expect(redact("WITH x AS (SELECT * FROM users) SELECT * FROM (WITH x AS (SELECT * FROM orders) " \
+                    "SELECT x.id FROM x WHERE x.total > 7) s"))
+        .to eq("WITH x AS (SELECT * FROM users) SELECT * FROM (WITH x AS (SELECT * FROM orders) " \
+               "SELECT x.id FROM x WHERE x.total > $3) s")
+    end
+
+    it "refuses a CTE whose body reads more than one table through a comma join" do
+      expect(refusal("WITH x AS (SELECT * FROM orders, users) SELECT x.id FROM x WHERE x.total > 7").rule)
+        .to eq("redact_rewrite_no_match")
+    end
+
+    it "follows a rename through a chain of CTEs instead of the name it ends with" do
+      expect(refusal("WITH a AS (SELECT o.user_id AS total FROM orders o), b AS (SELECT a.total FROM a) " \
+                     "SELECT b.total FROM b WHERE b.total > 5").rule).to eq("redact_rewrite_no_match")
+    end
+
+    it "refuses a self-referencing CTE cleanly instead of recursing" do
+      expect(refusal("WITH RECURSIVE x AS (SELECT * FROM x) SELECT x.id FROM x WHERE x.total > 7").rule)
+        .to eq("redact_rewrite_no_match")
+    end
+
+    it "lets a non-recursive CTE body see only earlier siblings, so its own name or a later one is a table" do
+      expect(refusal("WITH a AS (SELECT * FROM b), b AS (SELECT * FROM orders) " \
+                     "SELECT a.id FROM a WHERE a.total > 7").rule).to eq("redact_rewrite_no_match")
+      expect(redact("WITH orders AS (SELECT * FROM orders) SELECT orders.id FROM orders WHERE orders.total > 7"))
+        .to eq("WITH orders AS (SELECT * FROM orders) SELECT orders.id FROM orders WHERE orders.total > $3")
+    end
+
+    it "follows a CTE built on an earlier CTE" do
+      expect(redact("WITH a AS (SELECT * FROM orders), b AS (SELECT * FROM a) SELECT b.id FROM b WHERE b.total > 7"))
+        .to eq("WITH a AS (SELECT * FROM orders), b AS (SELECT * FROM a) SELECT b.id FROM b WHERE b.total > $3")
+    end
+  end
+
   it "refuses a statement that already has placeholders of its own" do
     expect { redact("SELECT o.id FROM orders o WHERE o.status = $1") }
       .to raise_error(Quaack::Enclave::Redaction::Error, "query_has_parameters")

@@ -6,6 +6,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 - 20261119-044500-1
+- 20261020-2
 - 20261118-223854-1
 - 20261119-001202-1
 - 20261010-47
@@ -369,16 +370,6 @@ From the build of 20261008-67. `ProductionComparison` (result-comparison on prod
 ### 20261018-32. index-build: build indices that differ only in spelling once. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261019-3. redact-rewrite: turn a query with real literals into a `--rewrites` rewrite. Done, see BACKLOG-COMPLETE.md.
-
-### 20261020-2. redact-rewrite: resolve a column reached through a CTE's name.
-
-Split from 20261019-4. A rewrite that moves a predicate into a CTE and filters it from outside (`WITH x AS (SELECT * FROM orders WHERE status = 'a') SELECT * FROM x WHERE x.user_id = 5`) names the column through the CTE, `x.user_id`. The matcher resolves `x` as a table called `x`, so it finds no comparison in the original (`orders.user_id`) and refuses `redact_rewrite_no_match`. Take a CTE name map from the enclosing WITH clauses, and resolve a CTE that selects `*` or the column straight from one table to that table. Anything it can't resolve stays a clean refusal. Enclave change; it goes on "Unreleased enclave changes".
-
-- **Depends on:** 20261019-3.
-- **Came from:** The builder of 20261019-4, 2026-10-20.
-- **Design:** Operator rewrites (`--rewrites`), redact-rewrite.
-- **Open questions:** None.
-- **Status:** todo
 
 ### 20261020-3. redact-rewrite: `internal_error` on the user's real run.
 

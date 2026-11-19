@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "scopes"
 
 module Quaack
   module Enclave
@@ -138,10 +139,11 @@ module Quaack
 
         # [table name or nil, column name]. An alias resolves through the
         # SELECTs from the innermost out; an unqualified column gets the
-        # one table of its own SELECT's FROM, if it has just one.
+        # one table of its own SELECT's FROM, if it has just one. A name
+        # bound to a CTE resolves through Scopes.
         def resolve(ref, scopes)
           *qualifier, column = ref.fields.map { it.string&.sval }
-          [table(qualifier, scopes), column]
+          Scopes.through(table(qualifier, scopes), column)
         end
 
         def table(qualifier, scopes)
@@ -152,24 +154,8 @@ module Quaack
           only.first if only&.size == 1
         end
 
-        # Each SELECT above, outermost first, as { name in FROM => table name or nil }.
-        def scopes(above)
-          above.filter_map { |message, _, _| from_names(message) if message.is_a?(PgQuery::SelectStmt) }
-        end
-
-        def from_names(select) = select.from_clause.each_with_object({}) { |node, names| add_from(node, names) }
-
-        def range_name(range) = range.alias&.aliasname || range.relname
-
-        def add_from(node, names)
-          if (range = node.range_var)
-            names[range_name(range)] = range.relname
-          elsif (join = node.join_expr)
-            [join.larg, join.rarg].each { add_from(it, names) }
-          elsif (sub = node.range_subselect)&.alias
-            names[sub.alias.aliasname] = nil
-          end
-        end
+        # Each SELECT above, outermost first, as { name in FROM => table name, Cte, or nil }.
+        def scopes(above) = Scopes.of(above)
       end
     end
   end
