@@ -14003,3 +14003,12 @@ The build and review of 20261118-223225-2 found that the rolled-back temporary v
 - **Design:** llm-counterexamples.
 - **Status:** done
 
+### 20261118-231527-2. Counterexample prompt: say date and time values go in as plain strings, not cast to text.
+
+After 20261118-223225-2, any cast of a date or timestamp to text or varchar is refused as `not_immutable` (`date_out`, `timestamp_out` and `timestamptz_out` are STABLE). Add one line to the counterexamples system prompt telling the model to write date and time values as plain strings or cast to their own column type, and update the `not_immutable` fixed sentence, which still speaks only of a function call's overload. Update the corpus prompt fixtures the way 20261114-170743-1 did (the sentence only, no re-recording).
+
+- **Depends on:** 20261118-223225-2.
+- **Came from:** The review of 20261118-223225-2, 2026-11-18 (minor).
+- **Design:** llm-counterexamples.
+- **Status:** done
+
