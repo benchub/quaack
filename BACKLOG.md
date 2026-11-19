@@ -73,8 +73,6 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 ## Added later.
 
-### 20261010-47. Trust boundary: fuzz's trials, enumerate's worlds and bound can follow query literals. Done, see BACKLOG-COMPLETE.md.
-
 ### 20260923-1. Postgres 17 parser under Postgres 18. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-30. Predicate atom loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -508,13 +506,4 @@ From the build of 20261015-5. (1) `ARRAY(SELECT ...)` with no `ORDER BY`, or one
 - **Came from:** The review of 20261110-19, 2026-11-18 (minor).
 - **Design:** LLM client.
 - **Status:** todo (needs the user's go-ahead for real claude calls and a planted user CLAUDE.md)
-
-### 20261119-060642-1. Report: say bucketed counts are lower bounds, and say sizes were withheld for a count threshold (minors from 20261010-47).
-
-The review of 20261010-47 found: (1) `search_note` in `driver/lib/quaack/driver/pipeline.rb` and the report's `survival.rb` print a power-of-two bucket as if exact ("Found no difference on 32,768 random datasets"); the real count can be nearly double, so say "at least N". (2) For a count-threshold query every footprint table reports size 5, and `size_words` in `driver/lib/quaack/driver/report/rewrites.rb` renders "5 or more rows in X", which is false for a threshold-0 disproof with no child rows; say the sizes were withheld for a count-threshold query (a fixed flag in the payload the report can read). Driver change, tests red first.
-
-- **Depends on:** 20261010-47 (landed).
-- **Came from:** The review of 20261010-47, 2026-11-19 (minor).
-- **Design:** report.
-- **Status:** todo
 

@@ -14103,3 +14103,12 @@ The builder of 20261010-47 found that bucketing doesn't hold fuzz's `trials` the
 - **Open questions:** The option above.
 - **User's choice (2026-11-19):** send no trials, and none of `fuzz_stop`'s exact seconds, when either query has a count threshold; the report says the search ran without a number.
 - **Status:** done
+
+### 20261119-060642-1. Report: say bucketed counts are lower bounds, and say sizes were withheld for a count threshold (minors from 20261010-47).
+
+The review of 20261010-47 found: (1) `search_note` in `driver/lib/quaack/driver/pipeline.rb` and the report's `survival.rb` print a power-of-two bucket as if exact ("Found no difference on 32,768 random datasets"); the real count can be nearly double, so say "at least N". (2) For a count-threshold query every footprint table reports size 5, and `size_words` in `driver/lib/quaack/driver/report/rewrites.rb` renders "5 or more rows in X", which is false for a threshold-0 disproof with no child rows; say the sizes were withheld for a count-threshold query (a fixed flag in the payload the report can read). Driver change, tests red first.
+
+- **Depends on:** 20261010-47 (landed).
+- **Came from:** The review of 20261010-47, 2026-11-19 (minor).
+- **Design:** report.
+- **Status:** done

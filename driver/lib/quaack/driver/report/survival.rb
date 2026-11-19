@@ -20,15 +20,32 @@ module Quaack
         # databases, then enumerate's, if it compared any, and the bound it
         # finished, if nothing later disproved the rewrite, unless either
         # search proved it wrong, or nil.
+        # The counts are power-of-two buckets (task 20261010-47), so each
+        # says "at least" (task 20261119-060642-1).
         def fuzz_line(entry)
+          return if Rewrites::SEARCH_FAILED.key?(entry["fate"])
+          return withheld_line(entry) if entry["withheld"] == true
+
           trials = entry["trials"]
-          return unless whole?(trials) && trials.positive? && !Rewrites::SEARCH_FAILED.key?(entry["fate"])
+          return unless whole?(trials) && trials.positive?
 
           worlds = entry["worlds"]
           worlds = 0 unless whole?(worlds)
-          "#{survivor(entry)} survived #{Words.count(trials + worlds, "mechanically generated data set")} " \
+          "#{survivor(entry)} survived at least #{Words.count(trials + worlds, "mechanically generated data set")} " \
             "trying to show it gives different results from the original query#{enumerated(entry, trials, worlds)}." \
             "#{stopped(entry["fuzz_stop"])}"
+        end
+
+        # A count-threshold search sends no trials and no fuzz_stop (task
+        # 20261119-044500-1), so the line says no number for fuzz's.
+        def withheld_line(entry)
+          worlds = entry["worlds"]
+          lead = "#{survivor(entry)} survived random mechanically generated data sets trying to show it gives " \
+                 "different results from the original query"
+          return "#{lead}; how many is withheld for a count threshold." unless whole?(worlds) && worlds.positive?
+
+          "#{lead}, how many withheld for a count threshold, then at least #{Format.number(worlds)} enumerated in " \
+            "order of size#{bound_claim(entry)}."
         end
 
         # Why fuzz stopped, from its stop rule (task 20261016-4), so a
@@ -68,7 +85,8 @@ module Quaack
         def enumerated(entry, trials, worlds)
           return "" unless worlds.positive?
 
-          ": #{Words.count(trials, "random one", "random ones")}, then #{Format.number(worlds)} enumerated in " \
+          ": at least #{Words.count(trials, "random one", "random ones")}, then at least #{Format.number(worlds)} " \
+            "enumerated in " \
             "order of size#{bound_claim(entry)}"
         end
 

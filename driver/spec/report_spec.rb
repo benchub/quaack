@@ -938,14 +938,16 @@ RSpec.describe Quaack::Driver::Report do
       let(:lead) { "trying to show it gives different results from the original query" }
 
       it "says how many mechanically generated data sets it survived" do
-        expect(line(survived(41_200))).to eq("Vivid Cove survived 41,200 mechanically generated data sets #{lead}.")
-        expect(line(survived(1))).to eq("Vivid Cove survived 1 mechanically generated data set #{lead}.")
+        expect(line(survived(41_200)))
+          .to eq("Vivid Cove survived at least 41,200 mechanically generated data sets #{lead}.")
+        expect(line(survived(1))).to eq("Vivid Cove survived at least 1 mechanically generated data set #{lead}.")
       end
 
       it "names the rewrite by its number past the last name" do
         number = Quaack::Driver::RewriteNames::SIZE + 1
         payload["rewrites"].first["rewrite"] = "rewrite_#{number}"
-        expect(line(survived(3))).to eq("Rewrite #{number} survived 3 mechanically generated data sets #{lead}.")
+        expect(line(survived(3)))
+          .to eq("Rewrite #{number} survived at least 3 mechanically generated data sets #{lead}.")
       end
 
       it "says nothing when fuzz compared none, disproved it, or the count isn't one" do
@@ -959,22 +961,38 @@ RSpec.describe Quaack::Driver::Report do
         line(survived(trials, fate)).to_s
       end
 
-      it "counts enumerate's data sets too, and says every data set up to its bound was among them" do
-        expect(enumerated(2)).to eq("Vivid Cove survived 945 mechanically generated data sets #{lead}: 40 " \
-                                    "random ones, then 905 enumerated in order of size, which covered every data " \
-                                    "set of up to 2 rows built from the query's own values (its constants, " \
-                                    "values next to them, and NULL).")
-        expect(enumerated(1, trials: 1, worlds: 1)).to eq("Vivid Cove survived 2 mechanically generated data sets " \
-                                                          "#{lead}: 1 random one, then 1 enumerated in order of " \
-                                                          "size, which covered every data set of up to 1 row built " \
-                                                          "from the query's own values (its constants, values next " \
-                                                          "to them, and NULL).")
+      # Task 20261119-060642-1: a count-threshold search withholds fuzz's
+      # trials, so the line says no number for them.
+      it "says a count-threshold rewrite survived, without fuzz's number" do
+        payload["rewrites"].first.merge!("withheld" => true)
+        expect(line(survived(nil))).to eq("Vivid Cove survived random mechanically generated data sets #{lead}; " \
+                                          "how many is withheld for a count threshold.")
+        payload["rewrites"].first.merge!("worlds" => 512, "bound" => 2, "tables" => 1)
+        expect(line(survived(nil))).to eq("Vivid Cove survived random mechanically generated data sets #{lead}, " \
+                                          "how many withheld for a count threshold, then at least 512 enumerated " \
+                                          "in order of size, which covered every data set of up to 2 rows built " \
+                                          "from the query's own values (its constants, values next to them, and " \
+                                          "NULL).")
       end
+
+      it "counts enumerate's data sets too, and says every data set up to its bound was among them" do
+        expect(enumerated(2)).to eq("Vivid Cove survived at least 945 mechanically generated data sets #{lead}: " \
+                                    "at least 40 random ones, then at least 905 enumerated in order of size, which " \
+                                    "covered every data set of up to 2 rows built from the query's own values (its " \
+                                    "constants, values next to them, and NULL).")
+        expect(enumerated(1, trials: 1, worlds: 1))
+          .to eq("Vivid Cove survived at least 2 mechanically generated data sets #{lead}: at least 1 random one, " \
+                 "then at least 1 enumerated in order of size, which covered every data set of up to 1 row built " \
+                 "from the query's own values (its constants, values next to them, and NULL).")
+      end
+
+      let(:split) { "at least 40 random ones, then at least 905 enumerated in order of size" }
 
       it "counts enumerate's data sets with no bound when it finished none, or the bound isn't one" do
         [0, nil, 5, "2", -1].each do |bound|
-          expect(enumerated(bound)).to eq("Vivid Cove survived 945 mechanically generated data sets #{lead}: 40 " \
-                                          "random ones, then 905 enumerated in order of size."), bound.inspect
+          expect(enumerated(bound))
+            .to eq("Vivid Cove survived at least 945 mechanically generated data sets #{lead}: #{split}."),
+                bound.inspect
         end
       end
 
@@ -984,15 +1002,16 @@ RSpec.describe Quaack::Driver::Report do
                                                      "the query's own values (its constants, values next to " \
                                                      "them, and NULL).")
         [[1, 2], [2, 3], [4, 5], [2, nil]].each do |bound, tables|
-          expect(enumerated(bound, tables:)).to eq("Vivid Cove survived 945 mechanically generated data sets " \
-                                                   "#{lead}: 40 random ones, then 905 enumerated in order of size."),
-                                                [bound, tables].inspect
+          expect(enumerated(bound, tables:))
+            .to eq("Vivid Cove survived at least 945 mechanically generated data sets #{lead}: #{split}."),
+                [bound, tables].inspect
         end
       end
 
       it "says only fuzz's count when enumerate compared none, or its count isn't one" do
         [0, nil, -1, "9"].each do |worlds|
-          expect(enumerated(2, worlds:)).to eq("Vivid Cove survived 40 mechanically generated data sets #{lead}.")
+          expect(enumerated(2,
+                            worlds:)).to eq("Vivid Cove survived at least 40 mechanically generated data sets #{lead}.")
         end
       end
 
@@ -1003,8 +1022,9 @@ RSpec.describe Quaack::Driver::Report do
 
       it "claims no bound when a later stage disproved the rewrite" do
         %w[rewrite_test_disproved counterexamples_disproved production_mismatch].each do |fate|
-          expect(enumerated(2, fate)).to eq("Vivid Cove survived 945 mechanically generated data sets #{lead}: " \
-                                            "40 random ones, then 905 enumerated in order of size.")
+          expect(enumerated(2,
+                            fate)).to eq("Vivid Cove survived at least 945 mechanically generated data sets #{lead}: " \
+                                         "at least 40 random ones, then at least 905 enumerated in order of size.")
         end
       end
 
@@ -1043,8 +1063,8 @@ RSpec.describe Quaack::Driver::Report do
       def stop(reason, seconds, quiet) = { "reason" => reason, "seconds" => seconds, "quiet" => quiet }
 
       let(:survived) do
-        "Vivid Cove survived 1,790 mechanically generated data sets trying to show it gives different results " \
-          "from the original query."
+        "Vivid Cove survived at least 1,790 mechanically generated data sets trying to show it gives different " \
+          "results from the original query."
       end
 
       it "says it ran dry, after how long, and how long it had found no new plan behaviour" do
@@ -1405,6 +1425,16 @@ RSpec.describe Quaack::Driver::Report do
         [6, 37].each do |rows|
           expect(fate("fuzz_disproved", sizes: [["public", "orders", rows]])).to eq(esc("#{lead}, so it's wrong."))
         end
+      end
+
+      # Task 20261119-060642-1: a count-threshold disproof's sizes all say 5,
+      # whatever the shrunk world had, so the report says they were withheld.
+      it "says a count-threshold disproof's sizes were withheld, not 5 or more rows" do
+        lead = "It returned different results from the original query on a random small database built around " \
+               "its own values"
+        expect(fate("fuzz_disproved", withheld: true, rule: "row_count",
+                                      sizes: [["public", "orders", 5], ["public", "customers", 5]]))
+          .to eq(esc("#{lead} (its row counts withheld for a count threshold; the row count differs), so it's wrong."))
       end
 
       it "leaves out a fuzz disproof's sizes or rule the payload doesn't have, or that aren't sizes" do
