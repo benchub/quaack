@@ -14028,3 +14028,13 @@ The review of 20261118-185846-1 found: (1) when a cut cycle key is a foreign key
 - **Status:** done
 
 Built: Loader#prepare alters a cut key where it was declared (a partition's inherited FK at its root) and skips one TRUNCATE's prep already dropped; `enclave/spec/fuzz_cut_keys_postgres_spec.rb` covers both partition cases and a planted dangling cut key. Also dropped the dead `cut?` in fuzz/enumerate/worlds.rb.
+
+### 20261119-011833-1. Spec flake: `spec/test_postgres_spec.rb`'s PgBouncer readiness check under load.
+
+Seen twice on 2026-11-18 during per-commit checks with other suites running: one example fails with PgBouncer "wasn't ready after 0.5s" where it expects the host-ping message, and the file passes when rerun alone. Find what the 0.5 s wait races against and make the example deterministic (wait on a readiness signal, not a fixed time) without weakening what it asserts.
+
+- **Depends on:** None.
+- **Came from:** Builders of 20261114-170743-1 and 20261118-185846-1, 2026-11-18.
+- **Design:** none (test support).
+- **Status:** done
+- **Outcome:** PgBouncer starts lazily on first `pgbouncer_port`, and the host-ping example never started it, so under random order (not load) it could run first and fail on pg_isready instead. Reproduced by running the example alone; it now starts PgBouncer first. Assertion unchanged.

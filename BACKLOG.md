@@ -551,12 +551,3 @@ The second review of 20261118-223225-2 found that `INSERT INTO t (d) VALUES ('20
 - **Design:** llm-counterexamples.
 - **Status:** todo
 
-### 20261119-011833-1. Spec flake: `spec/test_postgres_spec.rb`'s PgBouncer readiness check under load.
-
-Seen twice on 2026-11-18 during per-commit checks with other suites running: one example fails with PgBouncer "wasn't ready after 0.5s" where it expects the host-ping message, and the file passes when rerun alone. Find what the 0.5 s wait races against and make the example deterministic (wait on a readiness signal, not a fixed time) without weakening what it asserts.
-
-- **Depends on:** None.
-- **Came from:** Builders of 20261114-170743-1 and 20261118-185846-1, 2026-11-18.
-- **Design:** none (test support).
-- **Status:** todo
-

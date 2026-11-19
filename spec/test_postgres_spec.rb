@@ -547,7 +547,10 @@ RSpec.describe TestPostgres do
 
     # Task 20261114-190619-2: the timeout names the port and the probe that
     # failed last.
+    # Task 20261119-011833-1: PgBouncer starts on first use, so with random
+    # order this example could run before it was up and fail on pg_isready.
     it "names the port and the host probe when the host ping never answers" do
+      TestPostgres.server.pgbouncer_port
       stub_const("TestPostgres::PgBouncer::READY_TIMEOUT", 0.5)
       probe = TCPServer.new("127.0.0.1", 0)
       port = probe.addr[1]
