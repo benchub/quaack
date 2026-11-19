@@ -12,7 +12,8 @@ module Quaack
   module Enclave
     # The value checks of InsertCheck, which says what they are: rules
     # not_plain_value, not_immutable, bad_search_path, and
-    # volatile_function, in that order.
+    # volatile_function, in that order. InsertCasts runs the
+    # not_immutable rule for casts.
     #
     #   InsertValues.check(rows, settings, connection)
     #   # => nil, or raises Error "not_immutable: function pg_catalog.now is stable, not immutable"

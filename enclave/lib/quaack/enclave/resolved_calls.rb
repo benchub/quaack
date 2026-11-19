@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "coerce_via_io"
 
 module Quaack
   module Enclave
@@ -32,7 +33,9 @@ module Quaack
     # Postgres can't resolve a call, or the transaction is read-only. No
     # Postgres error leaves it.
     module ResolvedCalls
-      Function = Data.define(:schema, :name, :quoted_schema, :quoted_name, :volatility)
+      # coercion is true for the output or input function of a cast
+      # Postgres does through text (a CoerceViaIO), which no call names.
+      Function = Data.define(:schema, :name, :quoted_schema, :quoted_name, :volatility, :coercion)
 
       SAVEPOINT = "quaack_resolved_calls"
       VIEW = "quaack_resolved_calls"
@@ -44,7 +47,7 @@ module Quaack
       # casts (1 and 2) Postgres adds, which the volatility check judges.
       FUNCTIONS_SQL = <<~SQL
         SELECT DISTINCT n.nspname, p.proname, pg_catalog.quote_ident(n.nspname), pg_catalog.quote_ident(p.proname),
-               CASE WHEN p.provolatile OPERATOR(pg_catalog.=) 's' THEN 'stable' ELSE 'volatile' END
+               CASE WHEN p.provolatile OPERATOR(pg_catalog.=) 's' THEN 'stable' ELSE 'volatile' END, false
         FROM pg_catalog.pg_rewrite r,
              LATERAL pg_catalog.regexp_matches(r.ev_action::pg_catalog.text,
                                                '\\{FUNCEXPR :funcid (\\d+) [^{}]* :funcformat ([03]) ', 'g') m
@@ -99,13 +102,18 @@ module Quaack
         connection.exec("SAVEPOINT #{SAVEPOINT}")
         begin
           view!(sql, path, connection)
-          connection.exec_params(FUNCTIONS_SQL, ["pg_temp.#{VIEW}"]).values.map { Function.new(*it) }
+          found(connection).map { Function.new(*it) }
         rescue PG::Error
           nil
         ensure
           connection.exec("ROLLBACK TO SAVEPOINT #{SAVEPOINT}")
           connection.exec("RELEASE SAVEPOINT #{SAVEPOINT}")
         end
+      end
+
+      def found(connection)
+        view = "pg_temp.#{VIEW}"
+        connection.exec_params(FUNCTIONS_SQL, [view]).values + CoerceViaIo.functions(view, connection)
       end
 
       def view!(sql, path, connection)

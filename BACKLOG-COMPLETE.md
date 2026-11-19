@@ -13967,3 +13967,20 @@ From 20261012-52. On `accounts.course_template_id -> courses` (nullable) and `co
 - **Came from:** The build of 20261012-52, 2026-11-18.
 - **Design:** rewrite-test (fuzz's lift).
 - **Status:** done (2026-11-18). The fuzz half landed: the kill was never generated (the generator left every cut cycle key NULL), so Draw now fills nullable cut keys once every row is drawn, the session loads them with those constraints made deferrable and checked by `SET CONSTRAINTS ... IMMEDIATE`, and the lift defers nullable cross-table foreign keys by UPDATE. Enumerate still leaves cut keys NULL; see 20261118-223854-1.
+### 20261118-223225-1. ResolvedCalls: test that casts Postgres adds are left out (minor from 20261114-170743-1).
+
+The review of 20261114-170743-1 found that widening `ResolvedCalls`' funcformat match from `[03]` to `[0-3]` keeps every test green, so nothing shows that implicit casts Postgres adds are left to rule 12. Harmless today, since `resolved!` matches on the call's name. Add a test that goes red under that mutation.
+
+- **Depends on:** 20261114-170743-1 (landed).
+- **Came from:** The review of 20261114-170743-1, 2026-11-18 (minor).
+- **Design:** llm-counterexamples.
+- **Status:** done (2026-11-18: a ResolvedCalls spec lists a stable call's overload but not the stable casts Postgres adds, and goes red if funcformat 1 or 2 is matched)
+
+### 20261118-223225-2. InsertCheck: a function-style cast such as `text(<timestamptz>)` is accepted though it's STABLE.
+
+The review of 20261114-170743-1 found that `INSERT ... VALUES (text('2024-01-01'::timestamptz))` is accepted, on main before that task too. The function-style cast becomes a STABLE CoerceViaIO, which neither the overload check nor the volatility check catches, and its result follows the session timezone. Refuse it (or catch CoerceViaIO of a non-immutable output function in the volatility check). Postgres test red first. Enclave change.
+
+- **Depends on:** None.
+- **Came from:** The review of 20261114-170743-1, 2026-11-18.
+- **Design:** llm-counterexamples.
+- **Status:** done (2026-11-18: new rule 14, after clock_literal, refuses a cast Postgres does through text, CoerceViaIO, when the source type's output or the target type's input function isn't IMMUTABLE; ResolvedCalls reads these from the shell view's stored tree. It also refuses text-to-date and date-to-text casts, since date_in and date_out are STABLE. The system prompt is unchanged)

@@ -266,7 +266,8 @@ RSpec.describe Quaack::Enclave::InsertCheck do
     # Task 20261114-170743-1: the overload Postgres resolves the call to
     # is the one judged, not every overload with that many arguments.
     it "accepts a call whose resolved overload is immutable though another isn't" do
-      expect(runs("INSERT INTO sales.items (sku) VALUES (timezone('UTC', '2024-01-01 00:00'::timestamp)::text)").table)
+      sql = "INSERT INTO sales.items (shipped) VALUES (timezone('UTC', '2024-01-01 00:00'::timestamp)::date)"
+      expect(runs(sql).table)
         .to eq(table_name("sales", "items"))
     end
 
@@ -284,6 +285,42 @@ RSpec.describe Quaack::Enclave::InsertCheck do
                                                                                                        "items"))
       expect { check("INSERT INTO sales.items (sku) VALUES (sales.pair('a', '2024-01-01'::date))") }
         .to rejected("not_immutable", "not_immutable: function sales.pair is stable, not immutable")
+    end
+
+    # Task 20261118-223225-2: a cast through a STABLE output or input
+    # function is a CoerceViaIO, which no call names.
+    {
+      "a function-style cast" => "text('2024-01-01'::timestamptz)",
+      "an explicit cast" => "'2024-01-01'::timestamptz::text"
+    }.each do |what, value|
+      it "refuses #{what} through a stable output function" do
+        expect { check("INSERT INTO sales.items (sku) VALUES (#{value})") }
+          .to rejected("not_immutable",
+                       "not_immutable: function pg_catalog.timestamptz_out is stable, not immutable")
+      end
+    end
+
+    it "accepts a cast through immutable output and input functions" do
+      expect(runs("INSERT INTO sales.items (sku) VALUES (text(5)), ('7'::text::int4::text)").table)
+        .to eq(table_name("sales", "items"))
+    end
+
+    # The fix round of 20261118-223225-2: the assignment to the column is
+    # a cast too, and an array cast's element cast reads a CaseTestExpr.
+    {
+      "a cast value assigned to a text column" => "INSERT INTO sales.items (sku) VALUES ('2024-01-01'::timestamptz)",
+      "an array cast through text[]" => "INSERT INTO sales.items (tags) VALUES ('{2024-01-01}'::timestamptz[]::text[])",
+      "a date call's result assigned to a text column" =>
+        "INSERT INTO sales.items (sku) VALUES (make_date(2024, 1, 1))"
+    }.each do |what, sql|
+      it "refuses #{what} through a stable output function" do
+        expect { check(sql) }.to rejected("not_immutable")
+      end
+    end
+
+    it "accepts a value with no cast assigned through immutable functions" do
+      expect(runs("INSERT INTO sales.items (sku, qty, shipped) VALUES (5, '7', '2024-01-01')").table)
+        .to eq(table_name("sales", "items"))
     end
 
     it "refuses a bad search path" do
@@ -403,7 +440,7 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "a word in text a function reads as no date" => ["doc", "to_tsvector('english', 'Today only, till now')"],
       "a word in a composite's text field" => ["span", "'(2024-01-01,now)'"],
       "a word in the text field of an ARRAY's composite" => ["spans", "ARRAY['(2024-01-01,now)']::sales.span[]"],
-      "a word in the text field of a composite array cast" => ["note", "'{\"(2024-01-01,now)\"}'::sales.span[]"],
+      "a word in the text field of a composite array cast" => ["spans", "'{\"(2024-01-01,now)\"}'::sales.span[]"],
       "a word in a composite's quoted text field, in an array" => ["spans", "'{\"(2024-01-01,\\\"to day now\\\")\"}'"],
       "the words in a nested ARRAY for a text[]" => ["notes", "ARRAY[ARRAY['now'], ARRAY['today']]"],
       "the words in an ARRAY of text[] casts, for a text[]" => ["notes", "ARRAY['{now}'::text[]]"],
