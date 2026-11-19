@@ -10,6 +10,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261118-194818-1
 - 20261115-073253-2
 - 20261115-073253-1
+- 20261118-204800-1
 - 20261011-11
 - 20261012-8
 - 20261012-9
@@ -518,6 +519,12 @@ The second review of 20261012-52 found that `Fuzz::Differ#official?` runs the or
 
 - **Depends on:** 20261012-52 (landed).
 - **Came from:** The second review of 20261012-52, 2026-11-18 (minor).
+### 20261118-194818-1. Denormalized fixture: a domain CHECK on the copy column (minor from 20261011-5).
+
+The review of 20261011-5 found that `DenormalizedFixture`'s `CONSTRAINED` query misses a CHECK defined on a domain used as the copy column's type (it sits on `contypid`, not `conrelid`), so updates 2 and 3 still run and such a world fails to load. Rare; the cost is fewer worlds, not a false disproof. Fix by also checking the column type's domain constraints, or list it in DESIGN.md as unsupported in v1. Postgres test red first.
+
+- **Depends on:** 20261011-5 (landed).
+- **Came from:** The review of 20261011-5, 2026-11-18 (minor).
 - **Design:** rewrite-test.
 - **Status:** todo
 

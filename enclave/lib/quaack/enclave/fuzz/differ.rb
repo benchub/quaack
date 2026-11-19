@@ -38,7 +38,9 @@ module Quaack
 
           timeout = statement_timeout_ms
           flagged = saved(conn, timeout) { multisets(conn, original, sqls, typed) } || sqls.each_index.to_a
-          flagged.select { |index| saved(conn, timeout) { official?(conn, original, sqls[index], typed) } }
+          flagged.select do |index|
+            saved(conn, timeout) { |remark| official?(conn, original, sqls[index], typed, remark) }
+          end
         end
 
         # The indexes whose rows differ from the original's as multisets, or
@@ -53,8 +55,15 @@ module Quaack
           row.each_index.select { row[it] == "t" }
         end
 
-        def official?(conn, original, sql, typed)
-          run = ->(query, _index) { result(conn.exec_params(query, typed.params(conn, query))) }
+        # remark marks the server's clock again before each statement, so a
+        # cancel is timed from its own statement's start (task
+        # 20261118-204800-1).
+        def official?(conn, original, sql, typed, remark)
+          run = lambda do |query, _index|
+            params = typed.params(conn, query)
+            remark.call
+            result(conn.exec_params(query, params))
+          end
           verdict = ResultComparison.compare(ArenaRunner::Transaction.new(run, typed.binding), original:,
                                                                                                candidate: sql)
           !verdict.match? && ResultComparator::MISMATCHES.include?(verdict.rule)
@@ -73,7 +82,7 @@ module Quaack
         # raises statement_canceled, ending the step (task 20261012-52).
         def saved(conn, timeout_ms)
           started = ServerClock.mark(conn, "SAVEPOINT quaack_atoms;")
-          value = yield
+          value = yield(-> { started = ServerClock.mark(conn) })
           conn.exec("RELEASE SAVEPOINT quaack_atoms")
           value
         rescue PG::QueryCanceled

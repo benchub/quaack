@@ -13992,3 +13992,11 @@ The review of 20261011-5 found that `DenormalizedFixture`'s `CONSTRAINED` query 
 - **Came from:** The review of 20261011-5, 2026-11-18 (minor).
 - **Design:** rewrite-test.
 - **Status:** done (2026-11-18: the CONSTRAINED query also finds a CHECK on the copy column type's domain, walking domains over domains)
+### 20261118-204800-1. Differ: mark the server clock per statement in `official?` (minor from 20261012-52).
+
+The second review of 20261012-52 found that `Fuzz::Differ#official?` runs the original and the candidate under one savepoint and one `ServerClock.mark`. A foreign cancel that lands after more than the statement timeout has passed across both statements reads as QUAACK's own timeout and counts as "no difference". Narrow, and only near the timeout; it errs toward leaving an atom untested. Fix by marking the clock per statement. Postgres test red first. Enclave change.
+
+- **Depends on:** 20261012-52 (landed).
+- **Came from:** The second review of 20261012-52, 2026-11-18 (minor).
+- **Design:** rewrite-test.
+- **Status:** done (2026-11-18: `saved` hands `official?` a remark lambda that marks the server clock before each statement, so a cancel is timed from its own statement)
