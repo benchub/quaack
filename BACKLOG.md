@@ -268,7 +268,7 @@ Reported counts must not depend on literal values (DESIGN: shapes, counts and fi
 Trimmed 2026-10-14 after 20261012-4: removed the findings about ScenarioTests' `fixture_loads` following the LIMIT, `dropped` and the spills following IN-list values, `distinct_loads`' part in the scenario loads, and the "also cover the vacuity-guard search's untested set and `untested_states`" item. 20261012-4 removed all of them, and rebuilt the across-literals spec for fuzz's verdict, rule and coverage. 20261011-2, which carried the rest, is done.
 
 - **Depends on:** None.
-- **Measured (2026-11-18):** real stop rule, synthetic `fx` schema, 3 values x 3 reps per kind. LIMIT, OFFSET, IN-list values and BETWEEN bounds move trials, worlds and bound within run-to-run noise (up to about ±40%). A correlated count threshold moves both beyond noise: at n=10 trials fall about 35% below n=0 and 5 with no overlap, and enumerate's bound (time-based, values 0 to 4) was 1 at n=10 and 2 at n=5 in 3 of 3 runs. The measurer recommends making the bound time-independent (or not sending it), reporting trials and worlds in a coarse unit or not at all, and documenting the residual channel in DESIGN.md. Waiting on the user's choice.
+- **Measured (2026-11-18):** real stop rule, synthetic `fx` schema, 3 values x 3 reps per kind. LIMIT, OFFSET, IN-list values and BETWEEN bounds move trials, worlds and bound within run-to-run noise (up to about ±40%). A correlated count threshold moves both beyond noise: at n=10 trials fall about 35% below n=0 and 5 with no overlap, and enumerate's bound (time-based, values 0 to 4) was 1 at n=10 and 2 at n=5 in 3 of 3 runs. The measurer recommends making the bound time-independent (or not sending it), reporting trials and worlds in a coarse unit or not at all, and documenting the residual channel in DESIGN.md. The user chose (2026-11-18): make enumerate's bound independent of time (or stop sending it), report trials and worlds as power-of-two buckets, and document the residual channel in DESIGN.md.
 - **Note (2026-11-18):** the review of 20261113-210241-1 found its spread worlds load about a threshold's worth of child rows per parent, so a pass's trial count under the real stop rule follows a count threshold somewhat more than before. Include count thresholds in the measurement.
 - **Came from:** The second review of 20261010-35, 2026-10-10. Priority: trust boundary.
 - **Design:** What goes into the enclave; the burndown; rewrite-test.
@@ -517,12 +517,12 @@ From the build of 20261015-5. (1) `ARRAY(SELECT ...)` with no `ORDER BY`, or one
 
 ### 20261118-220251-1. Disproof sizes show a count threshold of 1 to 4 (from 20261113-210241-1).
 
-The review of 20261113-210241-1 found that a disproof of `count(...) > n` rewritten as `>= n` now reliably shrinks to a parent with about n children, so for n = 1..4 the `sizes` that go out show the threshold (5 and up are capped as "5 or more", DESIGN.md rewrite-test, "What it sends"). The cap already applied to HAVING copies; this task makes correlated thresholds reach it reliably. Ask the user whether count-threshold disproofs should drop `sizes` or always report "5 or more", then build it with an across-literals check on `sizes`.
+The review of 20261113-210241-1 found that a disproof of `count(...) > n` rewritten as `>= n` now reliably shrinks to a parent with about n children, so for n = 1..4 the `sizes` that go out show the threshold (5 and up are capped as "5 or more", DESIGN.md rewrite-test, "What it sends"). The cap already applied to HAVING copies; this task makes correlated thresholds reach it reliably. Ask the user whether count-threshold disproofs should drop `sizes` or always report "5 or more", then build it with an across-literals check on `sizes`. The user chose (2026-11-18): count-threshold disproofs always report "5 or more".
 
 - **Depends on:** 20261113-210241-1 (landed).
 - **Came from:** The review of 20261113-210241-1, 2026-11-18. Priority: trust boundary.
 - **Design:** rewrite-test.
-- **Status:** todo (waits on the user's choice)
+- **Status:** todo
 
 ### 20261118-231527-1. ResolvedCalls' shell view can run a non-strict type input function on NULL.
 
