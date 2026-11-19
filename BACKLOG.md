@@ -7,6 +7,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 - 20261118-223854-1
 - 20261119-001202-1
+- 20261010-47
+- 20261118-220251-1
 
 - 20261011-7
 - 20261118-194818-1
@@ -66,6 +68,18 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 ## Run server.
 
 ## Added later.
+
+### 20261010-47. Trust boundary: fuzz's trials, enumerate's worlds and bound can follow query literals. Done, see BACKLOG-COMPLETE.md.
+
+### 20261119-044500-1. Trust boundary: fuzz's trial count follows a count threshold through its stop rule, not only through time (from 20261010-47).
+
+The builder of 20261010-47 found that bucketing doesn't hold fuzz's `trials` the same across count thresholds. Even under `QUAACKS_FUZZ_TRIALS=100` (no clock), the correlated `count(...) > n` query's pass ran between 134 and 1000 compared trials for n = 0..10 (buckets 128 to 512), because the stop rule stops at twice the trial of the last new plan signature, and which signatures turn up follows the threshold. The real rule has the same dependence. Ask the user what to do: stop sending `trials` for a query with a count threshold (`Reach.threshold_paths`), send a fixed word instead, use a coarser bucket, or accept it and say so in DESIGN.md's "Counts across literals". Then hold it in `enclave/spec/across_literals_postgres_spec.rb`, red first. `fuzz_stop`'s `seconds` and `quiet`, times in the report payload, belong to the same question. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261010-47.
+- **Came from:** The builder of 20261010-47, 2026-11-19. Priority: trust boundary.
+- **Design:** rewrite-test ("Counts across literals").
+- **Open questions:** The option above.
+- **Status:** todo
 
 ### 20260923-1. Postgres 17 parser under Postgres 18. Done, see BACKLOG-COMPLETE.md.
 
@@ -260,20 +274,6 @@ Take the decision between 2 and 3 to the user before building, with the finding 
 ### 20261010-39. Untested conditions: CTE, scalar subquery, second column tie, and shapes found while building 20261010-33/34. Dropped, see BACKLOG-COMPLETE.md.
 
 ### 20261010-46. Untested conditions: a count threshold with other conditions (`count(...) > 2 AND title = 'x' AND score > 3`). Dropped, see BACKLOG-COMPLETE.md.
-
-### 20261010-47. Trust boundary: fuzz's trials, enumerate's worlds and bound can follow query literals through per-trial cost.
-
-Reported counts must not depend on literal values (DESIGN: shapes, counts and fixed names cross, never values). The counts the search sends out are fuzz's `trials`, enumerate's `worlds` and its `bound` (`protocol/lib/quaack/protocol/fuzz_result.rb`; `steps/rewrite_fuzz.rb` puts them on the `rewrite_test` message), and the burndown's fuzz and enumerate records. `enclave/spec/across_literals_postgres_spec.rb` deliberately doesn't hold the trial count to its byte-identical check (its comment, ~lines 27–29: it follows how long each trial takes, under the real stop rule), and nothing else does. Under the time-based stop rule (`Fuzz::StopRule`: a 30 s floor, twice the last new signature, a 60 s cap) and enumerate's 30 s limit, these counts follow per-trial cost, which can shift with a literal: a larger LIMIT or OFFSET returns more rows per trial, and an IN list's values can change which worlds get drawn and so how much each costs. Find out how much a count can move with only a literal changed (LIMIT, OFFSET, IN-list values, BETWEEN bounds, count thresholds) on realistic queries, and whether that's more than noise. Then decide with the user whether to bucket the counts, report them in a coarser unit, or accept and document the timing channel in DESIGN.md, and extend the across-literals spec for whatever is decided. This is a Security/Privacy-relevant boundary check; have an Opus reviewer.
-
-Trimmed 2026-10-14 after 20261012-4: removed the findings about ScenarioTests' `fixture_loads` following the LIMIT, `dropped` and the spills following IN-list values, `distinct_loads`' part in the scenario loads, and the "also cover the vacuity-guard search's untested set and `untested_states`" item. 20261012-4 removed all of them, and rebuilt the across-literals spec for fuzz's verdict, rule and coverage. 20261011-2, which carried the rest, is done.
-
-- **Depends on:** None.
-- **Measured (2026-11-18):** real stop rule, synthetic `fx` schema, 3 values x 3 reps per kind. LIMIT, OFFSET, IN-list values and BETWEEN bounds move trials, worlds and bound within run-to-run noise (up to about ±40%). A correlated count threshold moves both beyond noise: at n=10 trials fall about 35% below n=0 and 5 with no overlap, and enumerate's bound (time-based, values 0 to 4) was 1 at n=10 and 2 at n=5 in 3 of 3 runs. The measurer recommends making the bound time-independent (or not sending it), reporting trials and worlds in a coarse unit or not at all, and documenting the residual channel in DESIGN.md. The user chose (2026-11-18): make enumerate's bound independent of time (or stop sending it), report trials and worlds as power-of-two buckets, and document the residual channel in DESIGN.md.
-- **Note (2026-11-18):** the review of 20261113-210241-1 found its spread worlds load about a threshold's worth of child rows per parent, so a pass's trial count under the real stop rule follows a count threshold somewhat more than before. Include count thresholds in the measurement.
-- **Came from:** The second review of 20261010-35, 2026-10-10. Priority: trust boundary.
-- **Design:** What goes into the enclave; the burndown; rewrite-test.
-- **Landed so far:** 2026-10-11 (task/20261010-47): the first `across_literals_postgres_spec.rb`, for ScenarioTests' reports (since replaced by 20261012-4's version for fuzz).
-- **Status:** todo
 
 ### 20261010-48. Untested conditions: a correlated count threshold, built without leaking the threshold. Dropped, see BACKLOG-COMPLETE.md.
 
@@ -514,15 +514,6 @@ From the build of 20261015-5. (1) `ARRAY(SELECT ...)` with no `ORDER BY`, or one
 - **Came from:** The review of 20261110-19, 2026-11-18 (minor).
 - **Design:** LLM client.
 - **Status:** todo (needs the user's go-ahead for real claude calls and a planted user CLAUDE.md)
-
-### 20261118-220251-1. Disproof sizes show a count threshold of 1 to 4 (from 20261113-210241-1).
-
-The review of 20261113-210241-1 found that a disproof of `count(...) > n` rewritten as `>= n` now reliably shrinks to a parent with about n children, so for n = 1..4 the `sizes` that go out show the threshold (5 and up are capped as "5 or more", DESIGN.md rewrite-test, "What it sends"). The cap already applied to HAVING copies; this task makes correlated thresholds reach it reliably. Ask the user whether count-threshold disproofs should drop `sizes` or always report "5 or more", then build it with an across-literals check on `sizes`. The user chose (2026-11-18): count-threshold disproofs always report "5 or more".
-
-- **Depends on:** 20261113-210241-1 (landed).
-- **Came from:** The review of 20261113-210241-1, 2026-11-18. Priority: trust boundary.
-- **Design:** rewrite-test.
-- **Status:** todo
 
 ### 20261118-231527-1. ResolvedCalls' shell view can run a non-strict type input function on NULL.
 

@@ -682,7 +682,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         message = lines(fuzz_step).first
 
         expect(message).to include("passed" => true, "rule" => nil, "stage" => "fuzz", "worlds" => 0, "bound" => nil)
-        expect(message["trials"]).to be_a(Integer).and be >= 40
+        expect(message["trials"]).to be_a(Integer).and be >= 32
         expect(tested).to include("passed" => true, "stage" => "fuzz", "trials" => message["trials"])
         expect(tested).not_to have_key("sizes")
         # Task 20261016-4: why fuzz stopped goes to the store for the report, not in the message.
@@ -766,7 +766,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
           message = lines(outcome).first
           expect(message.keys).to eq(keys)
           expect(message).to include("passed" => false, "rule" => "value", "stage" => "enumerate")
-          expect(message["trials"]).to be_a(Integer).and be >= 40
+          expect(message["trials"]).to be_a(Integer).and be >= 32
           expect(message["worlds"]).to be_a(Integer).and be_positive
           expect(message["bound"]).to be_a(Integer).and be_between(0, 4)
           expect(tested).to include("passed" => false, "rule" => "value", "stage" => "enumerate",
@@ -791,7 +791,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
           message = lines(enumerate_step(FUZZ_ON)).first
 
           expect(message).to include("passed" => true, "stage" => "fuzz", "worlds" => 0, "bound" => nil)
-          expect(message["trials"]).to be_a(Integer).and be >= 40
+          expect(message["trials"]).to be_a(Integer).and be >= 32
           expect(burndown["stages"]["enumerate"]["rewrite_1"])
             .to eq(counted(out: 1, extra: { "worlds" => 0, "untested" => 1, "untested_atoms" => 0 }))
         end
@@ -817,7 +817,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         message = lines(enumerate_step).first
 
         expect(message).to include("passed" => true, "rule" => nil, "stage" => "enumerate", "tables" => 1)
-        expect(message["trials"]).to be_a(Integer).and be >= 40
+        expect(message["trials"]).to be_a(Integer).and be >= 32
         expect(message["worlds"]).to be_a(Integer).and be_positive
         expect(message["bound"]).to be_a(Integer).and be_between(1, 4)
         expect(tested).to include("stage" => "enumerate", "worlds" => message["worlds"],
@@ -837,7 +837,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         message, = in_process("rewrite_1", Quaack::Enclave::Deadline.new, ENUMERATE_ON)
 
         expect(message).to include(passed: true, rule: nil, stage: "fuzz", worlds: 0, bound: nil)
-        expect(message[:trials]).to be_a(Integer).and be >= 40
+        expect(message[:trials]).to be_a(Integer).and be >= 32
         expect(tested).to include("passed" => true, "stage" => "fuzz", "trials" => message[:trials])
         expect(burndown["stages"]["fuzz"]["rewrite_1"])
           .to eq(counted(out: 1, extra: marked("trials" => message[:trials])))

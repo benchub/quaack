@@ -9,9 +9,9 @@ module Quaack
     # A rewrite_test message's stage is the stage that decided it, nil (a
     # rewrite plan-pruning discarded, which nothing tested) or one of
     # STAGES, and trials how many small random databases fuzz compared the
-    # two queries on, nil or a count. Task 20261012-3 adds the enumerate
+    # two queries on, nil or a bucket (bucket). Task 20261012-3 adds the enumerate
     # stage, which runs after a fuzz pass, and its worlds, how many small
-    # databases it compared, nil or a count, and bound, the most rows of
+    # databases it compared, nil or a bucket, and bound, the most rows of
     # every database it tried, nil or 0 to MAX_BOUND.
     #
     # A fuzz disproof's sizes go only to the store and the report: one
@@ -21,8 +21,8 @@ module Quaack
     # a query constant (task 20261012-13), so a larger count could carry
     # one out. The rows themselves never leave the enclave.
     #
-    #   FuzzResult.rewrite_test?("stage" => "fuzz", "trials" => 12)  # => true
-    #   FuzzResult.rewrite_test?("stage" => "enumerate", "worlds" => 900, "bound" => 2)  # => true
+    #   FuzzResult.rewrite_test?("stage" => "fuzz", "trials" => 8)  # => true
+    #   FuzzResult.rewrite_test?("stage" => "enumerate", "worlds" => 512, "bound" => 2)  # => true
     #   FuzzResult.sizes?([["public", "orders", 2]])                  # => true
     module FuzzResult
       # rewrite-test is the stage of a message from before task 20261012-4,
@@ -82,7 +82,15 @@ module Quaack
 
       def stage?(stage) = stage.nil? || STAGES.include?(stage)
 
-      def trials?(trials) = trials.nil? || count?(trials)
+      def trials?(trials) = trials.nil? || bucket?(trials)
+
+      # Task 20261010-47: fuzz trials and enumerate worlds follow how long
+      # each trial takes, which can follow a literal, so they leave the
+      # enclave only as the largest power of two at or below the count, 0
+      # for none.
+      def bucket(count) = count.zero? ? 0 : 1 << (count.bit_length - 1)
+
+      def bucket?(count) = count?(count) && bucket(count) == count
 
       def bound?(bound) = bound.nil? || (count?(bound) && bound <= MAX_BOUND)
 

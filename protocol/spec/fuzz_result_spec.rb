@@ -9,18 +9,34 @@ RSpec.describe Quaack::Protocol::FuzzResult do
 
   it "accepts a rewrite_test's stage and trials only as nil, a stage from the list, and a count" do
     accepted = [{}, { "stage" => nil, "trials" => nil }, { "stage" => "fuzz", "trials" => 0 },
-                { "stage" => "rewrite-test", "trials" => 41_200 }]
+                { "stage" => "rewrite-test", "trials" => 32_768 }]
     expect(accepted.map { described_class.rewrite_test?(it) }).to all(be(true))
     refused = [{ "stage" => "Fuzz" }, { "stage" => :fuzz }, { "stage" => "enumerated" }, { "stage" => "x'secret'" },
                { "trials" => -1 }, { "trials" => 1.5 }, { "trials" => "12" }, { "trials" => 10**12 }]
     expect(refused.map { described_class.rewrite_test?(it) }).to all(be(false))
   end
 
+  # Task 20261010-47: trials and worlds follow how long each trial takes,
+  # which can follow a literal, so they go out as power-of-two buckets: the
+  # largest power of two at or below the count, and 0 for none.
+  it "buckets a count to the largest power of two at or below it" do
+    expect([0, 1, 2, 3, 4, 7, 8, 900, 1023, 1024, 41_200].map { described_class.bucket(it) })
+      .to eq([0, 1, 2, 2, 4, 4, 8, 512, 512, 1024, 32_768])
+  end
+
+  it "accepts trials and worlds only as nil or a bucket" do
+    accepted = [{ "trials" => 0, "worlds" => 0 }, { "trials" => 1, "worlds" => 512 }, { "trials" => 32_768 }]
+    expect(accepted.map { described_class.rewrite_test?(it) }).to all(be(true))
+    refused = [{ "trials" => 12 }, { "worlds" => 900 }, { "trials" => 3 }, { "worlds" => 41_200 }]
+    expect(refused.map { described_class.rewrite_test?(it) }).to all(be(false))
+    expect(described_class.rewrites?([{ "trials" => 41_200 }])).to be(false)
+  end
+
   # Task 20261012-3: enumerate's worlds compared, a count, and the row
   # bound it finished, 0 to 4.
   it "accepts a rewrite_test's worlds only as nil or a count, and its bound only as nil or 0 to 4" do
     accepted = [{ "stage" => "enumerate", "worlds" => 0, "bound" => nil },
-                { "stage" => "enumerate", "worlds" => 12_000, "bound" => 0 },
+                { "stage" => "enumerate", "worlds" => 8192, "bound" => 0 },
                 { "stage" => "rewrite-test", "worlds" => nil, "bound" => 4 }]
     expect(accepted.map { described_class.rewrite_test?(it) }).to all(be(true))
     refused = [{ "worlds" => -1 }, { "worlds" => "3" }, { "worlds" => 10**12 }, { "worlds" => 2.0 },
@@ -39,7 +55,7 @@ RSpec.describe Quaack::Protocol::FuzzResult do
                { "tables" => 37 }]
     expect(refused.map { described_class.rewrite_test?(it) }).to all(be(false))
     expect(described_class::MAX_TABLES).to eq(5)
-    sound = { "trials" => 41_200, "worlds" => 900, "bound" => 2, "tables" => 2 }
+    sound = { "trials" => 32_768, "worlds" => 512, "bound" => 2, "tables" => 2 }
     expect(described_class.rewrites?([sound, sound.merge("tables" => nil)])).to be(true)
     expect(described_class.rewrites?([sound, sound.merge("tables" => 37)])).to be(false)
   end
@@ -73,7 +89,7 @@ RSpec.describe Quaack::Protocol::FuzzResult do
   end
 
   it "accepts a report's rewrites only if each one's sizes and trials pass" do
-    sound = { "sizes" => [["public", "orders", 2]], "trials" => 41_200 }
+    sound = { "sizes" => [["public", "orders", 2]], "trials" => 32_768 }
     expect(described_class.rewrites?([sound.merge("sizes" => [["public", "orders", 6]])])).to be(false)
     expect(described_class.rewrites?([sound, {}, { "sizes" => nil, "trials" => nil }])).to be(true)
     expect(described_class.rewrites?([sound, sound.merge("sizes" => [%w[public orders 2]])])).to be(false)
@@ -81,7 +97,7 @@ RSpec.describe Quaack::Protocol::FuzzResult do
   end
 
   it "accepts a report's rewrites only if each one's worlds and bound pass" do
-    sound = { "trials" => 41_200, "worlds" => 900, "bound" => 2 }
+    sound = { "trials" => 32_768, "worlds" => 512, "bound" => 2 }
     expect(described_class.rewrites?([sound, sound.merge("worlds" => nil, "bound" => nil)])).to be(true)
     expect(described_class.rewrites?([sound, sound.merge("worlds" => "900")])).to be(false)
     expect(described_class.rewrites?([sound, sound.merge("bound" => 7)])).to be(false)
@@ -91,7 +107,7 @@ RSpec.describe Quaack::Protocol::FuzzResult do
   # seconds, never literals.
   it "accepts a report's rewrites only if each one's fuzz_stop is nil or a reason with whole seconds or none" do
     expect(described_class::STOP_REASONS).to eq(%w[dry floor cap deadline unlifted trials])
-    sound = { "trials" => 1790 }
+    sound = { "trials" => 1024 }
     accepted = [nil, { "reason" => "dry", "seconds" => 41, "quiet" => 20 },
                 { "reason" => "trials", "seconds" => nil, "quiet" => nil },
                 { "reason" => "deadline", "seconds" => 0, "quiet" => nil },
@@ -140,7 +156,7 @@ RSpec.describe Quaack::Protocol::FuzzResult do
   it "accepts a report's rewrites only if each one's not_tested is nil or a reason from the list" do
     expect(described_class::NOT_TESTED).to eq(%w[no_tables not_comparable setup_failed no_world unconfirmed
                                                  search_failed fuzz_off])
-    sound = { "trials" => 41_200 }
+    sound = { "trials" => 32_768 }
     accepted = [{}, { "not_tested" => nil }, *described_class::NOT_TESTED.map { { "not_tested" => it } }]
     expect(accepted.map { described_class.rewrites?([sound, sound.merge(it)]) }).to all(be(true))
     refused = ["PG::Error: QUAACK_SENTINEL", "out_of_time", :no_world, 3, ["no_world"]]

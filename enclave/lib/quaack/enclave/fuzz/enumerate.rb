@@ -23,7 +23,9 @@ module Quaack
       # worlds compared. bound is the most rows of every world tried
       # (Worlds#bound), 0 to Protocol::FuzzResult::MAX_BOUND, when it
       # passed or disproved, and nil when it's untested, so an enumeration
-      # that compared nothing never claims one. sizes are a disproof's rows
+      # that compared nothing never claims one, or when the clock stopped it
+      # (Limit#timed_out?, the Deadline), so the bound never follows how
+      # long each world took (task 20261010-47). sizes are a disproof's rows
       # per table, as the search's are. The worlds, kinds and values never
       # leave here.
       module Enumerate
@@ -41,6 +43,7 @@ module Quaack
             @compared = 0
             @lifts = 0
             @done = -1
+            @timed = false
           end
 
           def call
@@ -48,6 +51,7 @@ module Quaack
             catch(:stop) { weigh(started) }
             @outcome || ended
           rescue Deadline::Expired
+            @timed = true
             ended
           end
 
@@ -62,7 +66,8 @@ module Quaack
           end
 
           def step(rows, started)
-            throw :stop if @lifts >= LIFTS || @limit.over?(@tried, started)
+            throw :stop if @lifts >= LIFTS || @tried >= @limit.cap
+            throw :stop if (@timed = @limit.timed_out?(started))
             Deadline.check!
             return unless killed?(rows)
 
@@ -87,7 +92,7 @@ module Quaack
           end
 
           def outcome(verdict, rule = nil, sizes = [])
-            bound = @worlds.bound(@done) unless verdict == :untested
+            bound = @worlds.bound(@done) unless verdict == :untested || @timed
             Outcome.new(verdict:, rule:, worlds: @compared, bound:, sizes:)
           end
         end

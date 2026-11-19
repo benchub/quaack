@@ -26,8 +26,12 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
   describe "Limit" do
     let(:limit) { described_class::Limit }
 
-    it "runs for 30 seconds unless QUAACKS_ENUMERATE_WORLDS caps it at a count of worlds, and 0 turns it off" do
-      expect(limit.from_env({})).to have_attributes(cap: 30, clock: limit::MONOTONIC)
+    # Task 20261010-47: production stops at a fixed count of worlds, so the
+    # bound it reports never follows how long a world takes; 30 seconds is
+    # only a backstop, and a run it stops reports no bound.
+    it "runs to WORLDS worlds with a 30 second backstop unless QUAACKS_ENUMERATE_WORLDS caps it, and 0 turns it off" do
+      expect(limit::WORLDS).to eq(8192)
+      expect(limit.from_env({})).to have_attributes(cap: limit::WORLDS, clock: limit::MONOTONIC)
       expect(limit.from_env({ "QUAACKS_ENUMERATE_WORLDS" => "25" })).to have_attributes(cap: 25, clock: nil)
       expect(limit.from_env({ "QUAACKS_ENUMERATE_WORLDS" => "0" })).to be_nil
       expect { limit.from_env({ "QUAACKS_ENUMERATE_WORLDS" => "x" }) }.to raise_error(ArgumentError)
@@ -36,12 +40,13 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     it "is over once it has tried its count of worlds, or once its seconds have passed" do
       expect([limit.worlds(3).over?(2, nil), limit.worlds(3).over?(3, nil)]).to eq([false, true])
       now = 100.0
-      timed = limit.new(cap: 30, clock: -> { now })
+      timed = limit.new(cap: 8192, clock: -> { now })
       started = timed.start
       now = 129.0
-      expect(timed.over?(10_000, started)).to be(false)
+      expect([timed.over?(8191, started), timed.timed_out?(started), timed.over?(8192, started)])
+        .to eq([false, false, true])
       now = 130.0
-      expect(timed.over?(0, started)).to be(true)
+      expect([timed.over?(0, started), timed.timed_out?(started)]).to eq([true, true])
     end
   end
 
@@ -187,11 +192,13 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
-  it "passes with the bound it finished when the rewrite's deadline runs out later" do
+  # Task 20261010-47: the bound a deadline leaves would follow how long each
+  # world took, so a run the deadline stops passes with none.
+  it "passes with no bound when the rewrite's deadline runs out later" do
     finished = both(*pair, worlds: 10_000).enumerate
     result = within(enumerating([0, 200])) { both(*pair, worlds: 10_000) }
 
-    expect(result.enumerate).to have_attributes(verdict: :passed, bound: 1)
+    expect(result.enumerate).to have_attributes(verdict: :passed, bound: nil)
     expect(result.enumerate.worlds).to be < finished.worlds
   end
 
@@ -797,6 +804,27 @@ RSpec.describe Quaack::Enclave::Fuzz::Enumerate do
       expect(worlds.bound(worlds.max_weight)).to be_positive
       expect(search.trials).to eq(3000)
       expect(outcome).to have_attributes(verdict: :untested, worlds: 0, bound: nil)
+    end
+
+    # Task 20261010-47: a bound reached before the backstop ran out would
+    # follow how long each world took, so a run the clock stops sends none,
+    # though it still passes on the worlds it tried.
+    it "passes with no bound when its 30 second backstop stops it" do
+      compared = fuzz::Session::Trial.new(signature: nil, compared: true, rule: nil)
+      now = 0.0
+      clock = lambda {
+        now += 0.01
+        now
+      }
+
+      outcome = described_class::Run.new(search_class.new(compared), worlds,
+                                         described_class::Limit.new(cap: 10**9, clock:)).call
+      capped = described_class::Run.new(search_class.new(compared), worlds,
+                                        described_class::Limit.new(cap: outcome.worlds, clock: nil)).call
+
+      expect(capped).to have_attributes(verdict: :passed, worlds: outcome.worlds)
+      expect(capped.bound).to be_positive
+      expect(outcome).to have_attributes(verdict: :passed, bound: nil)
     end
 
     it "stops after fuzz's limit of kills that don't lift" do

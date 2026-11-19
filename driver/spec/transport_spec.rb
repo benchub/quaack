@@ -805,10 +805,10 @@ RSpec.describe Quaack::Driver::Transport do
     # Protocol::FuzzResult.rewrite_test? (20261012-2), so the driver checks the same.
     it "reads a rewrite_test with fuzz's stage and trials, and refuses one whose stage or trials isn't on the list" do
       good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"rule":"row_count",) +
-             %("stage":"fuzz","trials":41200})
+             %("stage":"fuzz","trials":32768})
       result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 
-      expect(result.messages.first).to include("stage" => "fuzz", "trials" => 41_200)
+      expect(result.messages.first).to include("stage" => "fuzz", "trials" => 32_768)
       failed = raw("print #{"#{good.sub("row_count", "query_failed")}\n{\"type\":\"done\"}\n".inspect}").call("probe")
       expect(failed.messages.first).to include("stage" => "fuzz", "rule" => "query_failed")
       [%("stage":"#{sentinel}"), %("trials":"#{sentinel}"), %("trials":-1)].each do |field|
@@ -821,10 +821,10 @@ RSpec.describe Quaack::Driver::Transport do
     # Task 20261012-3: enumerate's worlds and bound, checked as egress does.
     it "reads a rewrite_test with enumerate's stage, worlds and bound, and refuses one whose worlds or bound isn't" do
       good = %({"type":"rewrite_test","rewrite":"rewrite_1","passed":false,"rule":"value",) +
-             %("stage":"enumerate","trials":40,"worlds":905,"bound":2})
+             %("stage":"enumerate","trials":32,"worlds":512,"bound":2})
       result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 
-      expect(result.messages.first).to include("stage" => "enumerate", "worlds" => 905, "bound" => 2)
+      expect(result.messages.first).to include("stage" => "enumerate", "worlds" => 512, "bound" => 2)
       [%("worlds":"#{sentinel}"), %("worlds":-1), %("bound":"#{sentinel}"), %("bound":5), %("bound":-1)].each do |f|
         error = refusal(%({"type":"rewrite_test","rewrite":"rewrite_1","passed":true,#{f}}))
         expect(error.rule).to eq("unexpected_output"), "for #{f}"
@@ -924,7 +924,7 @@ RSpec.describe Quaack::Driver::Transport do
         JSON.generate({ "type" => "report", "original_plan" => [], "labels" => [], "index_sources" => index_sources,
                         "rewrites" => [{ "rewrite" => "rewrite_1", "plan" => nil, **fields }] })
       end
-      good = { "sizes" => [["public", "orders", 2]], "trials" => 41_200, "worlds" => 905, "bound" => 2,
+      good = { "sizes" => [["public", "orders", 2]], "trials" => 32_768, "worlds" => 512, "bound" => 2,
                "fuzz_stop" => { "reason" => "dry", "seconds" => 41, "quiet" => 20 } }
       result = raw("print #{"#{report.call(good)}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 

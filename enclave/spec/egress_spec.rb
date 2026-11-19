@@ -253,11 +253,11 @@ RSpec.describe Quaack::Enclave::Egress do
 
     it "sends the stage that decided it and fuzz's trials (20261012-2), but never a disproof's sizes" do
       out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: false, rule: "row_count",
-                             stage: "fuzz", trials: 41_200, sizes: [["public", EGRESS_SENTINEL, 2]])
+                             stage: "fuzz", trials: 32_768, sizes: [["public", EGRESS_SENTINEL, 2]])
 
       expect(JSON.parse(out)).to eq("type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => false,
                                     "rule" => "row_count", "stage" => "fuzz",
-                                    "trials" => 41_200)
+                                    "trials" => 32_768)
     end
 
     # The user's decision (2026-10-12): fuzz disproves a rewrite that fails
@@ -271,16 +271,16 @@ RSpec.describe Quaack::Enclave::Egress do
 
     it "sends enumerate's stage, the worlds it compared, and the bound it finished (20261012-3)" do
       out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, rule: nil,
-                             stage: "enumerate", trials: 41_200, worlds: 905, bound: 4)
+                             stage: "enumerate", trials: 32_768, worlds: 512, bound: 4)
 
       expect(JSON.parse(out)).to eq("type" => "rewrite_test", "rewrite" => "rewrite_2", "passed" => true,
                                     "rule" => nil, "stage" => "enumerate",
-                                    "trials" => 41_200, "worlds" => 905, "bound" => 4)
+                                    "trials" => 32_768, "worlds" => 512, "bound" => 4)
     end
 
     it "sends how many tables the queries read, up to MAX_TABLES (20261012-31)" do
       out = egress.serialize(type: :rewrite_test, rewrite: "rewrite_2", passed: true, rule: nil,
-                             stage: "enumerate", trials: 40, worlds: 905, bound: 1, tables: 2)
+                             stage: "enumerate", trials: 32, worlds: 512, bound: 1, tables: 2)
 
       expect(JSON.parse(out)).to include("bound" => 1, "tables" => 2)
     end
@@ -822,7 +822,7 @@ RSpec.describe Quaack::Enclave::Egress do
       it "sends tables either query names, with their row counts, and trials as a count" do
         sizes = [["public", "orders", 5], ["sales", "customers", 1], ["sales", "refunds", 1]]
         rewrite_sql = "SELECT o.id FROM public.orders o WHERE NOT EXISTS (SELECT FROM sales.refunds r)"
-        counts = { "trials" => 41_200, "worlds" => 905, "bound" => 3, "tables" => 3,
+        counts = { "trials" => 32_768, "worlds" => 512, "bound" => 3, "tables" => 3,
                    "fuzz_stop" => { "reason" => "dry", "seconds" => 41, "quiet" => 20 } }
         sent = parsed(report_with({ "sizes" => sizes, **counts }, sql: rewrite_sql))
         expect(sent["rewrites"].first).to include("sizes" => sizes, **counts)

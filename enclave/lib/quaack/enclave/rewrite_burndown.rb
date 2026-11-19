@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/protocol/burndown"
+require "quaack/protocol/fuzz_result"
 require_relative "burndown"
 require_relative "rewrite_candidate_check"
 require_relative "steps/index_search"
@@ -101,7 +102,7 @@ module Quaack
         disproved = outcome.verdict == :disproved
         kind = outcome.reason == :out_of_time ? :not_tested_in_time : :untested
         untested = outcome.verdict == :untested ? { kind => 1 } : {}
-        extra = { trials: outcome.trials, **untested, **settings }
+        extra = { trials: Protocol::FuzzResult.bucket(outcome.trials), **untested, **settings }
         Burndown.record_latest(
           store, [["fuzz", search.to_sym, { in: 1, dropped: disproved ? { fuzz_drop(outcome.rule) => 1 } : {},
                                             out: disproved ? 0 : 1, extra: }]]
@@ -130,7 +131,8 @@ module Quaack
 
       def enumerate_extra(outcome, untested_atoms)
         verdict = outcome.verdict
-        { worlds: outcome.worlds, **(verdict == :passed ? { "bound_#{outcome.bound}": 1 } : {}),
+        bound = (outcome.bound if verdict == :passed)
+        { worlds: Protocol::FuzzResult.bucket(outcome.worlds), **(bound ? { "bound_#{bound}": 1 } : {}),
           **(verdict == :untested ? { untested: 1 } : {}),
           **({ untested_atoms: } if untested_atoms) }
       end

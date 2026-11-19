@@ -17,6 +17,7 @@ require_relative "fuzz/session"
 require_relative "fuzz/lift"
 require_relative "fuzz/enumerate"
 require_relative "fuzz/coverage"
+require_relative "fuzz/reach"
 require_relative "fuzz/differ"
 require_relative "fuzz/uncut"
 require_relative "predicate_atoms"
@@ -186,6 +187,7 @@ module Quaack
                                                           column_names: @catalog.schema.column_names),
                                    queries.first, binding)
           @compared = @lifts = 0
+          @thresholded = queries.any? { Reach.threshold_paths(PgQuery.parse(it).tree, binding).any? }
         end
 
         def call(stop, rng, limit)
@@ -323,10 +325,15 @@ module Quaack
         # Each table's rows, but at most Protocol::FuzzResult::MAX_SIZE,
         # which means that many or more: a copies world can hold a query
         # constant's worth of rows, and the count mustn't carry it out.
+        # When either query compares an aggregate with a constant
+        # (Reach.threshold_paths, task 20261118-220251-1), a disproof
+        # shrinks to about the threshold's rows, and which tables got any
+        # can follow it too, so every footprint table says MAX_SIZE.
         def sizes(rows)
-          rows.group_by(&:table).map do |table, group|
-            [table.schema, table.name, [group.size, Protocol::FuzzResult::MAX_SIZE].min]
-          end.sort
+          max = Protocol::FuzzResult::MAX_SIZE
+          return @catalog.footprint.map { [it.schema, it.name, max] }.sort if @thresholded
+
+          rows.group_by(&:table).map { |table, group| [table.schema, table.name, [group.size, max].min] }.sort
         end
       end
     end
