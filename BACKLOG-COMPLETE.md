@@ -14018,3 +14018,13 @@ From 20261118-185846-1. Enumerate's worlds (`Fuzz::Enumerate::Worlds`) give a cu
 - **Came from:** The review of 20261115-073253-2, 2026-11-18 (minor).
 - **Design:** fixture-compare.
 - **Status:** done. Each unaliased FROM subquery gets its own `quaack_pick_from` name, numbered past every string in the query.
+
+### 20261119-011833-1. Spec flake: `spec/test_postgres_spec.rb`'s PgBouncer readiness check under load.
+
+Seen twice on 2026-11-18 during per-commit checks with other suites running: one example fails with PgBouncer "wasn't ready after 0.5s" where it expects the host-ping message, and the file passes when rerun alone. Find what the 0.5 s wait races against and make the example deterministic (wait on a readiness signal, not a fixed time) without weakening what it asserts.
+
+- **Depends on:** None.
+- **Came from:** Builders of 20261114-170743-1 and 20261118-185846-1, 2026-11-18.
+- **Design:** none (test support).
+- **Status:** done
+- **Outcome:** PgBouncer starts lazily on first `pgbouncer_port`, and the host-ping example never started it, so under random order (not load) it could run first and fail on pg_isready instead. Reproduced by running the example alone; it now starts PgBouncer first. Assertion unchanged.
