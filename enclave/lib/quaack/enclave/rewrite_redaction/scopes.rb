@@ -49,18 +49,26 @@ module Quaack
           end
         end
 
-        # The CTEs visible inside select: its own WITH's over the enclosing ones.
+        # The CTEs visible inside select, its own WITH's over the enclosing
+        # ones, each name => [CTE, the CTEs its body sees]. A non-recursive
+        # body sees only the siblings before it; a RECURSIVE one sees all.
         def visible(select, ctes)
           list = select.with_clause&.ctes.to_a.filter_map(&:common_table_expr)
-          list.empty? ? ctes : ctes.merge(list.to_h { [it.ctename, it] })
+          return ctes if list.empty?
+
+          everything = {}
+          found = list.each_with_object(ctes.dup) do |cte, before|
+            before[cte.ctename] = [cte, select.with_clause.recursive ? everything : before.dup]
+          end
+          everything.merge!(found)
         end
 
         # A table name for an ordinary range, or a Cte for one naming a visible CTE.
         def target(range, ctes, seen = [])
-          cte = ctes[range.relname] if range.schemaname.empty?
+          cte, env = ctes[range.relname] if range.schemaname.empty?
           return range.relname unless cte
 
-          resolved(cte, ctes, seen) || Cte.new(name: range.relname, table: nil, columns: {})
+          resolved(cte, env, seen) || Cte.new(name: range.relname, table: nil, columns: {})
         end
 
         def resolved(cte, ctes, seen)

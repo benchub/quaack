@@ -220,6 +220,28 @@ RSpec.describe Quaack::Enclave::RewriteRedaction do
                "SELECT x.id FROM x WHERE x.total > $3) s")
     end
 
+    it "refuses a CTE whose body reads more than one table through a comma join" do
+      expect(refusal("WITH x AS (SELECT * FROM orders, users) SELECT x.id FROM x WHERE x.total > 7").rule)
+        .to eq("redact_rewrite_no_match")
+    end
+
+    it "follows a rename through a chain of CTEs instead of the name it ends with" do
+      expect(refusal("WITH a AS (SELECT o.user_id AS total FROM orders o), b AS (SELECT a.total FROM a) " \
+                     "SELECT b.total FROM b WHERE b.total > 5").rule).to eq("redact_rewrite_no_match")
+    end
+
+    it "refuses a self-referencing CTE cleanly instead of recursing" do
+      expect(refusal("WITH RECURSIVE x AS (SELECT * FROM x) SELECT x.id FROM x WHERE x.total > 7").rule)
+        .to eq("redact_rewrite_no_match")
+    end
+
+    it "lets a non-recursive CTE body see only earlier siblings, so its own name or a later one is a table" do
+      expect(refusal("WITH a AS (SELECT * FROM b), b AS (SELECT * FROM orders) " \
+                     "SELECT a.id FROM a WHERE a.total > 7").rule).to eq("redact_rewrite_no_match")
+      expect(redact("WITH orders AS (SELECT * FROM orders) SELECT orders.id FROM orders WHERE orders.total > 7"))
+        .to eq("WITH orders AS (SELECT * FROM orders) SELECT orders.id FROM orders WHERE orders.total > $3")
+    end
+
     it "follows a CTE built on an earlier CTE" do
       expect(redact("WITH a AS (SELECT * FROM orders), b AS (SELECT * FROM a) SELECT b.id FROM b WHERE b.total > 7"))
         .to eq("WITH a AS (SELECT * FROM orders), b AS (SELECT * FROM a) SELECT b.id FROM b WHERE b.total > $3")
