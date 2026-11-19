@@ -13958,3 +13958,12 @@ From the review of 20261015-5 (minor). (1) A Postgres 16+ unaliased FROM subquer
 - **Came from:** The review of 20261015-5, 2026-11-15 (minor).
 - **Design:** fixture-compare.
 - **Status:** done (2026-11-18: an unaliased FROM subquery gets an alias in the forced copy, so its window picks force like the aliased form; GROUPING SETS and ROLLUP already refuse up front as unsupported_construct, so they never reach the pick run)
+
+### 20261118-194818-1. Denormalized fixture: a domain CHECK on the copy column (minor from 20261011-5).
+
+The review of 20261011-5 found that `DenormalizedFixture`'s `CONSTRAINED` query misses a CHECK defined on a domain used as the copy column's type (it sits on `contypid`, not `conrelid`), so updates 2 and 3 still run and such a world fails to load. Rare; the cost is fewer worlds, not a false disproof. Fix by also checking the column type's domain constraints, or list it in DESIGN.md as unsupported in v1. Postgres test red first.
+
+- **Depends on:** 20261011-5 (landed).
+- **Came from:** The review of 20261011-5, 2026-11-18 (minor).
+- **Design:** rewrite-test.
+- **Status:** done (2026-11-18: the CONSTRAINED query also finds a CHECK on the copy column type's domain, walking domains over domains)
