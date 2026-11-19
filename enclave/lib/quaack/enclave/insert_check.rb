@@ -86,6 +86,9 @@ module Quaack
     #     function counts too, the assignment to the column included, so
     #     a timestamptz into a date column, which runs the STABLE
     #     date(timestamptz), is refused (task 20261119-001742-1).
+    #     Rules 11 and 14 raise unsafe_input instead when any type outside
+    #     pg_catalog has an input function that isn't strict, since
+    #     ResolvedCalls' view would call it on NULL (task 20261118-231527-1).
     # 15. deparse_mismatch: the insert doesn't parse back to the same tree
     #     when pg_query deparses it (see Deparse).
     #
@@ -230,14 +233,14 @@ module Quaack
 
       def values!(rows, settings, connection)
         InsertValues.check(rows, settings, connection)
-      rescue InsertValues::Error => e
+      rescue InsertValues::Error, ResolvedCalls::Error => e
         raise Error.from(e), cause: nil
       end
 
       def clock!(cols, rows, types, settings, connection)
         InsertClockWords.check(cols, rows, types, settings, connection)
         InsertCasts.check(cols, rows, types, settings, connection)
-      rescue InsertClockWords::Error, InsertValues::Error => e
+      rescue InsertClockWords::Error, InsertValues::Error, ResolvedCalls::Error => e
         raise Error.from(e), cause: nil
       end
 

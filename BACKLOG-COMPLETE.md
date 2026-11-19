@@ -13994,3 +13994,12 @@ The second review of 20261118-223225-2 found that `INSERT INTO t (d) VALUES ('20
 - **Design:** llm-counterexamples.
 - **Status:** done
 
+### 20261118-231527-1. ResolvedCalls' shell view can run a non-strict type input function on NULL.
+
+The build and review of 20261118-223225-2 found that the rolled-back temporary view `ResolvedCalls` builds (from 20261114-170743-1) turns string constants into NULL, and Postgres then calls a cast type's input function on that NULL if the function isn't strict. With an internal-language test type that crashed the backend, which restarts every connection on the database. No ordinary user type can do this (it needs C or internal code), and citext, hstore and PostGIS have strict input functions, so it's unlikely, but serious when it happens. Fix: before building the view, refuse (or fall back) when any cast target type in the values has a non-strict input function (`pg_proc.proisstrict`). Postgres test red first. Enclave change.
+
+- **Depends on:** 20261114-170743-1 (landed).
+- **Came from:** The build and review of 20261118-223225-2, 2026-11-18.
+- **Design:** llm-counterexamples.
+- **Status:** done
+

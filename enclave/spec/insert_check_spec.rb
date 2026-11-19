@@ -349,6 +349,38 @@ RSpec.describe Quaack::Enclave::InsertCheck do
         .to rejected("bad_search_path", "bad_search_path: search_path public, has an empty entry")
     end
 
+    # Task 20261118-231527-1: ResolvedCalls' shell view turns strings into
+    # NULL, and Postgres would hand that NULL to a non-strict input
+    # function, which can crash the backend. The type here reuses textin,
+    # which does crash on NULL, so the check must refuse before the view.
+    describe "a type whose input function isn't strict" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE TYPE sales.loose;
+          CREATE FUNCTION sales.loose_in(cstring) RETURNS sales.loose LANGUAGE internal IMMUTABLE
+            CALLED ON NULL INPUT AS 'textin';
+          CREATE FUNCTION sales.loose_out(sales.loose) RETURNS cstring LANGUAGE internal IMMUTABLE STRICT AS 'textout';
+          CREATE TYPE sales.loose (INPUT = sales.loose_in, OUTPUT = sales.loose_out, LIKE = text);
+          CREATE TABLE sales.loosely (id int, v sales.loose);
+        SQL
+      end
+
+      let(:refused) do
+        rejected("unsafe_input", "unsafe_input: type sales.loose has an input function that isn't strict")
+      end
+
+      it "refuses a cast to it" do
+        expect { check("INSERT INTO sales.items (sku) VALUES (lower('a'::sales.loose::text))") }.to refused
+        expect(conn.exec("SELECT 1").getvalue(0, 0)).to eq("1")
+      end
+
+      it "refuses a value for a column of it" do
+        expect { check("INSERT INTO sales.loosely (id, v) VALUES (1, 'a')", tables: [table_name("sales", "loosely")]) }
+          .to refused
+        expect(conn.exec("SELECT 1").getvalue(0, 0)).to eq("1")
+      end
+    end
+
     it "refuses a cast whose function is volatile, through the volatility check" do
       conn.exec(<<~SQL)
         CREATE TYPE sales.odd;

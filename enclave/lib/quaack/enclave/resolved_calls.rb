@@ -62,12 +62,47 @@ module Quaack
         ORDER BY 1, 2
       SQL
 
+      # Raised, with a rule and a message naming only a type, when the
+      # shell isn't safe to analyze (20261118-231527-1).
+      class Error < StandardError
+        attr_reader :rule
+
+        def initialize(rule, detail)
+          @rule = rule
+          super("#{rule}: #{detail}")
+        end
+      end
+
+      # Postgres converts a NULL the shell made to a cast's, a column's,
+      # or a parameter's type with that type's input function, and calls
+      # it on NULL when it isn't strict. pg_catalog's non-strict ones
+      # (domain_in and the pseudo-types') take NULL, but one from C or
+      # internal code may crash the backend, so any type outside
+      # pg_catalog with one refuses every insert
+      # (20261118-231527-1). The parameters' types aren't known before
+      # the view resolves the calls, so every type counts.
+      LOOSE_INPUT_SQL = <<~SQL
+        SELECT pg_catalog.quote_ident(n.nspname) OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||)
+               pg_catalog.quote_ident(t.typname)
+        FROM pg_catalog.pg_type t
+        JOIN pg_catalog.pg_proc p ON p.oid OPERATOR(pg_catalog.=) t.typinput
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) t.typnamespace
+        WHERE NOT p.proisstrict AND p.pronamespace OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace
+        ORDER BY 1 LIMIT 1
+      SQL
+
       module_function
+
+      def loose_input!(connection)
+        type = connection.exec(LOOSE_INPUT_SQL).values.first&.first
+        raise Error.new("unsafe_input", "type #{type} has an input function that isn't strict") if type
+      end
 
       def of(probe, path, connection, casts: false)
         sql = shell_sql(probe)
         return nil unless sql
 
+        loose_input!(connection)
         formats = casts ? "{0,1,2,3}" : "{0,3}"
         transaction(connection) { functions(sql, path, formats, connection) }
       end
