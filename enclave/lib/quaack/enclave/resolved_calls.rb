@@ -43,28 +43,68 @@ module Quaack
 
       # pg_depend has no rows for pg_catalog's pinned functions, so the
       # function ids come from the view's stored tree: each FUNCEXPR
-      # written as a call (funcformat 0) or in SQL syntax (3), not the
-      # casts (1 and 2) Postgres adds, which the volatility check judges.
+      # written as a call (funcformat 0) or in SQL syntax (3). The casts
+      # (1 and 2) Postgres adds are left to the volatility check, unless
+      # casts: is true, when they come back as coercions: InsertCasts
+      # judges the casts the column assignment adds (20261119-001742-1).
       FUNCTIONS_SQL = <<~SQL
         SELECT DISTINCT n.nspname, p.proname, pg_catalog.quote_ident(n.nspname), pg_catalog.quote_ident(p.proname),
-               CASE WHEN p.provolatile OPERATOR(pg_catalog.=) 's' THEN 'stable' ELSE 'volatile' END, false
+               CASE WHEN p.provolatile OPERATOR(pg_catalog.=) 's' THEN 'stable' ELSE 'volatile' END,
+               m[2] OPERATOR(pg_catalog.=) ANY ('{1,2}'::pg_catalog.text[])
         FROM pg_catalog.pg_rewrite r,
              LATERAL pg_catalog.regexp_matches(r.ev_action::pg_catalog.text,
-                                               '\\{FUNCEXPR :funcid (\\d+) [^{}]* :funcformat ([03]) ', 'g') m
+                                               '\\{FUNCEXPR :funcid (\\d+) [^{}]* :funcformat (\\d) ', 'g') m
         JOIN pg_catalog.pg_proc p ON p.oid OPERATOR(pg_catalog.=) m[1]::pg_catalog.oid
         JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace
         WHERE r.ev_class OPERATOR(pg_catalog.=) $1::pg_catalog.regclass
           AND p.provolatile OPERATOR(pg_catalog.<>) 'i'
+          AND m[2] OPERATOR(pg_catalog.=) ANY ($2::pg_catalog.text[])
         ORDER BY 1, 2
+      SQL
+
+      # Raised, with a rule and a message naming only a type, when the
+      # shell isn't safe to analyze (20261118-231527-1).
+      class Error < StandardError
+        attr_reader :rule
+
+        def initialize(rule, detail)
+          @rule = rule
+          super("#{rule}: #{detail}")
+        end
+      end
+
+      # Postgres converts a NULL the shell made to a cast's, a column's,
+      # or a parameter's type with that type's input function, and calls
+      # it on NULL when it isn't strict. pg_catalog's non-strict ones
+      # (domain_in and the pseudo-types') take NULL, but one from C or
+      # internal code may crash the backend, so any type outside
+      # pg_catalog with one refuses every insert
+      # (20261118-231527-1). The parameters' types aren't known before
+      # the view resolves the calls, so every type counts.
+      LOOSE_INPUT_SQL = <<~SQL
+        SELECT pg_catalog.quote_ident(n.nspname) OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||)
+               pg_catalog.quote_ident(t.typname)
+        FROM pg_catalog.pg_type t
+        JOIN pg_catalog.pg_proc p ON p.oid OPERATOR(pg_catalog.=) t.typinput
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) t.typnamespace
+        WHERE NOT p.proisstrict AND p.pronamespace OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace
+        ORDER BY 1 LIMIT 1
       SQL
 
       module_function
 
-      def of(probe, path, connection)
+      def loose_input!(connection)
+        type = connection.exec(LOOSE_INPUT_SQL).values.first&.first
+        raise Error.new("unsafe_input", "type #{type} has an input function that isn't strict") if type
+      end
+
+      def of(probe, path, connection, casts: false)
         sql = shell_sql(probe)
         return nil unless sql
 
-        transaction(connection) { functions(sql, path, connection) }
+        loose_input!(connection)
+        formats = casts ? "{0,1,2,3}" : "{0,3}"
+        transaction(connection) { functions(sql, path, formats, connection) }
       end
 
       # The probe's SELECT with its string constants NULL and its casts
@@ -98,11 +138,11 @@ module Quaack
         constant.isnull = true
       end
 
-      def functions(sql, path, connection)
+      def functions(sql, path, formats, connection)
         connection.exec("SAVEPOINT #{SAVEPOINT}")
         begin
           view!(sql, path, connection)
-          found(connection).map { Function.new(*it) }
+          found(formats, connection).map { Function.new(*it) }
         rescue PG::Error
           nil
         ensure
@@ -111,9 +151,9 @@ module Quaack
         end
       end
 
-      def found(connection)
+      def found(formats, connection)
         view = "pg_temp.#{VIEW}"
-        connection.exec_params(FUNCTIONS_SQL, [view]).values + CoerceViaIo.functions(view, connection)
+        connection.exec_params(FUNCTIONS_SQL, [view, formats]).values + CoerceViaIo.functions(view, connection)
       end
 
       def view!(sql, path, connection)

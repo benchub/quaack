@@ -387,7 +387,7 @@ module Quaack
         transaction_ended
         transaction_closed rollback_failed
         not_insert missing_columns unknown_column insert_select alias with on_conflict returning not_immutable
-        not_plain_value
+        not_plain_value unsafe_input
         not_create_index concurrently unique nulls_not_distinct tablespace on_only storage_options
         unqualified_table forbidden_in_index
       ].freeze

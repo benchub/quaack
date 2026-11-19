@@ -52,7 +52,10 @@ module Quaack
       def coercions!(probe, settings, connection)
         return unless CoerceViaIo.casts?(probe.tree)
 
-        coercion = ResolvedCalls.of(probe, InsertValues.search_path(settings, connection), connection)&.find(&:coercion)
+        # A cast with a function, such as date(timestamptz), counts too
+        # (20261119-001742-1).
+        path = InsertValues.search_path(settings, connection)
+        coercion = ResolvedCalls.of(probe, path, connection, casts: true)&.find(&:coercion)
         InsertValues.refuse!(coercion.quoted_schema, coercion.quoted_name, coercion.volatility) if coercion
       end
     end

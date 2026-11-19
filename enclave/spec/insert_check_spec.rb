@@ -68,12 +68,12 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "an array" => "INSERT INTO sales.items (id, tags) VALUES (1, ARRAY['x', 'y']), (2, '{z}'), (3, ARRAY[]::text[])",
       "immutable calls" => "INSERT INTO sales.items (id, sku) VALUES (1, lower('A')), (2, public.steady(upper('b')))",
       "an identity DEFAULT" => "INSERT INTO public.orders (id, customer_id, status, total_cents, created_at) " \
-                               "VALUES (DEFAULT, 1, 'open', 100, '2024-01-01T00:00:00Z'::timestamptz)",
+                               "VALUES (DEFAULT, 1, 'open', 100, '2024-01-01Z'::timestamptz)",
       # Task 20260927-24: a counterexample may set a GENERATED ALWAYS key.
       "OVERRIDING SYSTEM VALUE" => "INSERT INTO public.customers (id, name, email, created_at) " \
-                                   "OVERRIDING SYSTEM VALUE VALUES (900001, 'n', 'o@x', '2024-01-01'::date)",
+                                   "OVERRIDING SYSTEM VALUE VALUES (900001, 'n', 'o@x', '2024-01-01Z'::timestamptz)",
       "OVERRIDING USER VALUE" => "INSERT INTO public.customers (id, name, email, created_at) " \
-                                 "OVERRIDING USER VALUE VALUES (900001, 'n', 'o@x', '2024-01-01'::date)"
+                                 "OVERRIDING USER VALUE VALUES (900001, 'n', 'o@x', '2024-01-01Z'::timestamptz)"
     }.each do |what, sql|
       it "accepts #{what}" do
         conn.exec("INSERT INTO public.customers (name, email, created_at) VALUES ('c', 'c@x', now())")
@@ -266,7 +266,7 @@ RSpec.describe Quaack::Enclave::InsertCheck do
     # Task 20261114-170743-1: the overload Postgres resolves the call to
     # is the one judged, not every overload with that many arguments.
     it "accepts a call whose resolved overload is immutable though another isn't" do
-      sql = "INSERT INTO sales.items (shipped) VALUES (timezone('UTC', '2024-01-01 00:00'::timestamp)::date)"
+      sql = "INSERT INTO sales.items (shipped) VALUES (timezone('UTC', '2024-01-01 00:00+00'::timestamptz)::date)"
       expect(runs(sql).table)
         .to eq(table_name("sales", "items"))
     end
@@ -318,6 +318,27 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       end
     end
 
+    # Task 20261119-001742-1: the assignment to the column, or a cast of
+    # the value's own, can run a function that isn't immutable, as
+    # timestamptz into date runs the STABLE date(timestamptz).
+    {
+      "a timestamptz assigned to a date column" =>
+        "INSERT INTO sales.items (shipped) VALUES ('2024-01-01 00:00+00'::timestamptz)",
+      "a timestamptz cast to date" =>
+        "INSERT INTO sales.items (shipped) VALUES ('2024-01-01 00:00+00'::timestamptz::date)"
+    }.each do |what, sql|
+      it "refuses #{what} through a stable cast function" do
+        expect { check(sql) }
+          .to rejected("not_immutable", "not_immutable: function pg_catalog.date is stable, not immutable")
+      end
+    end
+
+    it "accepts literals into their own column types, and an immutable cast function" do
+      expect(runs("INSERT INTO sales.items (shipped, qty, order_id) VALUES ('2024-01-01', '7', 5), " \
+                  "('2024-01-02'::date, 8::int4, 6::int4)").table)
+        .to eq(table_name("sales", "items"))
+    end
+
     it "accepts a value with no cast assigned through immutable functions" do
       expect(runs("INSERT INTO sales.items (sku, qty, shipped) VALUES (5, '7', '2024-01-01')").table)
         .to eq(table_name("sales", "items"))
@@ -326,6 +347,38 @@ RSpec.describe Quaack::Enclave::InsertCheck do
     it "refuses a bad search path" do
       expect { check("INSERT INTO sales.items (sku) VALUES (lower('a'))", { "search_path" => "public," }) }
         .to rejected("bad_search_path", "bad_search_path: search_path public, has an empty entry")
+    end
+
+    # Task 20261118-231527-1: ResolvedCalls' shell view turns strings into
+    # NULL, and Postgres would hand that NULL to a non-strict input
+    # function, which can crash the backend. The type here reuses textin,
+    # which does crash on NULL, so the check must refuse before the view.
+    describe "a type whose input function isn't strict" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE TYPE sales.loose;
+          CREATE FUNCTION sales.loose_in(cstring) RETURNS sales.loose LANGUAGE internal IMMUTABLE
+            CALLED ON NULL INPUT AS 'textin';
+          CREATE FUNCTION sales.loose_out(sales.loose) RETURNS cstring LANGUAGE internal IMMUTABLE STRICT AS 'textout';
+          CREATE TYPE sales.loose (INPUT = sales.loose_in, OUTPUT = sales.loose_out, LIKE = text);
+          CREATE TABLE sales.loosely (id int, v sales.loose);
+        SQL
+      end
+
+      let(:refused) do
+        rejected("unsafe_input", "unsafe_input: type sales.loose has an input function that isn't strict")
+      end
+
+      it "refuses a cast to it" do
+        expect { check("INSERT INTO sales.items (sku) VALUES (lower('a'::sales.loose::text))") }.to refused
+        expect(conn.exec("SELECT 1").getvalue(0, 0)).to eq("1")
+      end
+
+      it "refuses a value for a column of it" do
+        expect { check("INSERT INTO sales.loosely (id, v) VALUES (1, 'a')", tables: [table_name("sales", "loosely")]) }
+          .to refused
+        expect(conn.exec("SELECT 1").getvalue(0, 0)).to eq("1")
+      end
     end
 
     it "refuses a cast whose function is volatile, through the volatility check" do

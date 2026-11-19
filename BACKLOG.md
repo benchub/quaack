@@ -39,6 +39,9 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261114-170743-1
 - 20261118-223225-1
 - 20261118-223225-2
+- 20261119-001742-1
+- 20261118-231527-1
+- 20261118-231527-2
 
 
 ## How this file works.
@@ -522,32 +525,5 @@ The review of 20261113-210241-1 found that a disproof of `count(...) > n` rewrit
 - **Depends on:** 20261113-210241-1 (landed).
 - **Came from:** The review of 20261113-210241-1, 2026-11-18. Priority: trust boundary.
 - **Design:** rewrite-test.
-- **Status:** todo
-
-### 20261118-231527-1. ResolvedCalls' shell view can run a non-strict type input function on NULL.
-
-The build and review of 20261118-223225-2 found that the rolled-back temporary view `ResolvedCalls` builds (from 20261114-170743-1) turns string constants into NULL, and Postgres then calls a cast type's input function on that NULL if the function isn't strict. With an internal-language test type that crashed the backend, which restarts every connection on the database. No ordinary user type can do this (it needs C or internal code), and citext, hstore and PostGIS have strict input functions, so it's unlikely, but serious when it happens. Fix: before building the view, refuse (or fall back) when any cast target type in the values has a non-strict input function (`pg_proc.proisstrict`). Postgres test red first. Enclave change.
-
-- **Depends on:** 20261114-170743-1 (landed).
-- **Came from:** The build and review of 20261118-223225-2, 2026-11-18.
-- **Design:** llm-counterexamples.
-- **Status:** todo
-
-### 20261118-231527-2. Counterexample prompt: say date and time values go in as plain strings, not cast to text.
-
-After 20261118-223225-2, any cast of a date or timestamp to text or varchar is refused as `not_immutable` (`date_out`, `timestamp_out` and `timestamptz_out` are STABLE). Add one line to the counterexamples system prompt telling the model to write date and time values as plain strings or cast to their own column type, and update the `not_immutable` fixed sentence, which still speaks only of a function call's overload. Update the corpus prompt fixtures the way 20261114-170743-1 did (the sentence only, no re-recording).
-
-- **Depends on:** 20261118-223225-2.
-- **Came from:** The review of 20261118-223225-2, 2026-11-18 (minor).
-- **Design:** llm-counterexamples.
-- **Status:** todo
-
-### 20261119-001742-1. InsertCheck: a function-backed assignment cast such as timestamptz into a date column is accepted (from 20261118-223225-2).
-
-The second review of 20261118-223225-2 found that `INSERT INTO t (d) VALUES ('2024-01-01 00:00+00'::timestamptz)` into a date column is accepted. The assignment runs `timestamptz_date`, which is STABLE and follows TimeZone. It isn't a cast through text, so rule 14 misses it; ResolvedCalls leaves out casts Postgres adds, and the volatility check judges the rows without the column cast. Judge the FuncExpr casts the column wrapper adds (they show in the shell view), or refuse them cleanly. Postgres test red first. Enclave change.
-
-- **Depends on:** 20261118-223225-2 (landed).
-- **Came from:** The second review of 20261118-223225-2, 2026-11-18 (minor).
-- **Design:** llm-counterexamples.
 - **Status:** todo
 

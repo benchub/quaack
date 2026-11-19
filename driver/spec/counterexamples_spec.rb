@@ -63,6 +63,8 @@ RSpec.describe Quaack::Driver::Counterexamples do
     expect(system).to include("the overload Postgres picks", "concat", "jsonb_build_object")
     expect(system).not_to include("any of its overloads")
     expect(system).to include("one row per INSERT")
+    # Task 20261118-231527-2: a date or time cast to text is refused.
+    expect(system).to include("Write date and time values as plain strings, or cast them to their own column type")
   end
 
   describe "the rounds" do
@@ -115,7 +117,7 @@ RSpec.describe Quaack::Driver::Counterexamples do
         expect(lines[0]).to start_with("insert 1 was refused (not_plain_value): ")
         expect(lines[0]).to include("operator")
         expect(lines[1]).to start_with("insert 3 was refused (not_immutable, pg_catalog.concat): ")
-        expect(lines[1]).to include("overload")
+        expect(lines[1]).to include("overload", "a cast", "date or time value to text")
         expect(lines[2]).to eq("The accepted inserts gave both queries the same results.")
       end
 

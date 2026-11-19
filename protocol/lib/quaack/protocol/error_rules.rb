@@ -61,7 +61,7 @@ module Quaack
                  toast_relation
                  transaction_closed transaction_ended unique unknown_column unknown_extra_dump_schema unknown_name
                  unknown_placeholder unknown_relation
-                 unparsable unqualified_table unresolved_relation unsatisfiable_check unsupported_construct
+                 unparsable unqualified_table unresolved_relation unsafe_input unsatisfiable_check unsupported_construct
                  unsupported_production_version unsupported_reg_literal unsupported_type untyped_literal usage
                  user_function_in_from
                  using_column_unreplaceable view_relation volatile_function volatility_not_passed
