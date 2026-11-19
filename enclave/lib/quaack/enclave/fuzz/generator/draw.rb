@@ -24,13 +24,14 @@ module Quaack
 
           def rows
             uniques = Uniques.new(catalog, plan, method(:fresh))
-            plan.order.flat_map do |table|
+            rows = plan.order.flat_map do |table|
               count(table).times do
                 row = row(table)
                 @by_table[table] << row if row && uniques.admit?(row)
               end
               @by_table[table]
             end
+            rows.each { close_cycles(it) }
           end
 
           private
@@ -137,6 +138,17 @@ module Quaack
             chosen = pick(@by_table[key.parent]) unless nullable && chance?(@config.null_rate)
             copy(cells, key, chosen ? chosen.cells : {})
             nullable || !chosen.nil?
+          end
+
+          # Fills a row's cut keys, which closed a foreign-key cycle, from a
+          # parent row anywhere in the world, or leaves them NULL at the
+          # null rate, once every row is drawn. The session loads them with
+          # the cut constraints deferred (task 20261118-185846-1).
+          def close_cycles(row)
+            plan.entries_for(row.table).filter_map { it.fk if it.kind == :null }.uniq.each do |key|
+              chosen = pick(@by_table[key.parent]) unless chance?(@config.null_rate)
+              copy(row.cells, key, chosen.cells) if chosen
+            end
           end
 
           # The spread key's columns, from the parent whose copy this is.

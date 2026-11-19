@@ -6,7 +6,8 @@ module Quaack
       class Generator
         # How each footprint column gets its value, and the order tables
         # fill in: parents before children over the kept foreign keys, a
-        # cycle cut at a nullable one, whose columns stay NULL.
+        # cycle cut at a nullable one, whose columns Draw fills once every
+        # row is drawn, for the session to load with the cut deferred.
         #
         # Kinds: :null (a cut key), :fk (from a parent row), :pk (a key
         # class's single-column unique key, one no earlier row took), :key
@@ -19,6 +20,9 @@ module Quaack
           Table = Data.define(:name, :kept, :cut, :unique)
 
           attr_reader :order
+
+          # The nullable foreign keys cut to break a cycle (Catalog::ForeignKey).
+          def cut_keys = @cut.select { fk_nullable?(it) }
 
           def initialize(catalog, domains)
             @catalog = catalog
@@ -71,8 +75,17 @@ module Quaack
             return if col.default == "generated"
 
             reference = table.kept.find { it.columns.include?(col.name) }
-            kind = table.cut.include?(col.name) ? :null : kind_of(table, col, reference)
+            return cut_entry(table, col) if table.cut.include?(col.name)
+
+            kind = kind_of(table, col, reference)
             Entry.new(column: col.name, kind:, fk: reference) if kind
+          end
+
+          # A cut key's column: a nullable key gives its key, for Draw to
+          # fill; one that isn't stays NULL, and the world fails to load.
+          def cut_entry(table, col)
+            key = @cut.find { it.child == table.name && it.columns.include?(col.name) }
+            Entry.new(column: col.name, kind: :null, fk: (key if fk_nullable?(key)))
           end
 
           def kind_of(table, col, reference)

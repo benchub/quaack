@@ -13958,3 +13958,12 @@ From the review of 20261015-5 (minor). (1) A Postgres 16+ unaliased FROM subquer
 - **Came from:** The review of 20261015-5, 2026-11-15 (minor).
 - **Design:** fixture-compare.
 - **Status:** done (2026-11-18: an unaliased FROM subquery gets an alias in the forced copy, so its window picks force like the aliased form; GROUPING SETS and ROLLUP already refuse up front as unsupported_construct, so they never reach the pick run)
+
+### 20261118-185846-1. Fuzz and enumerate pass a wrong rewrite that needs both edges of an FK cycle filled.
+
+From 20261012-52. On `accounts.course_template_id -> courses` (nullable) and `courses.account_id -> accounts` (NOT NULL), dropping a Rails `where.missing` anti join (`... LEFT JOIN courses c ON c.id = a.course_template_id WHERE c.id IS NULL` rewritten as all accounts) passes fuzz at 1000 trials and enumerate at 2000 worlds (bound 3). A world that tells them apart needs an account whose template is a course of an account, which the lift loads with every constraint enforced in table order (`Fuzz::Lift#loaded`, "a cycle among them loads in the order found, and fails to load if it must"), so the kill likely never lifts. Load the nullable cycle column after both tables, by UPDATE, as counterexample rounds do (20261003-17), and add the case to `enclave/spec/fuzz_fk_cycle_postgres_spec.rb`, red first. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** None.
+- **Came from:** The build of 20261012-52, 2026-11-18.
+- **Design:** rewrite-test (fuzz's lift).
+- **Status:** done (2026-11-18). The fuzz half landed: the kill was never generated (the generator left every cut cycle key NULL), so Draw now fills nullable cut keys once every row is drawn, the session loads them with those constraints made deferrable and checked by `SET CONSTRAINTS ... IMMEDIATE`, and the lift defers nullable cross-table foreign keys by UPDATE. Enumerate still leaves cut keys NULL; see 20261118-223854-1.

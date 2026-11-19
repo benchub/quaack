@@ -33,7 +33,7 @@ module Quaack
       # failure, unless the original runs and the candidate fails on the
       # data (DataError), which is query_failed; a cancel that wasn't
       # QUAACK's statement_timeout ends the step, as in the counterexample rounds.
-      class Lift
+      class Lift # rubocop:disable Metrics/ClassLength -- the lift and its load order
         DEPTH = 20
         # Past the generator's fresh values, so a built key never meets a world's.
         FRESH = 500_000
@@ -71,7 +71,8 @@ module Quaack
         # The built parents in load order: by table, each table after the
         # tables its rows reference, and in a table, each row after the rows
         # built for it, which are its parents. A cycle among them loads in
-        # the order found, and fails to load if it must.
+        # the order found, its nullable edges deferred (fixture_row), and
+        # fails to load if it must.
         def loaded(built)
           by_table = built.group_by(&:table)
           table_order(by_table).flat_map { by_table.fetch(it).reverse }
@@ -180,8 +181,18 @@ module Quaack
 
         def nullable?(table, link) = link.columns.all? { @catalog.column(table, it).nullable }
 
+        # A value in a nullable foreign key to another table loads by a
+        # deferred UPDATE once every row has, as in the counterexample
+        # rounds, so rows that close a foreign-key cycle through it load in
+        # any order (20261118-185846-1).
         def fixture_row(table, values)
-          ArenaRunner::FixtureRow.new(table:, columns: values.keys, values: values.values)
+          ArenaRunner::FixtureRow.new(table:, columns: values.keys, values: values.values,
+                                      deferred: deferred(table, values))
+        end
+
+        def deferred(table, values)
+          keys = @catalog.foreign_keys(table).select { it.parent != table && nullable?(table, it) && tuple(it, values) }
+          keys.flat_map(&:columns).uniq
         end
       end
     end

@@ -173,12 +173,14 @@ module Quaack
 
       # One search's state.
       class Search # rubocop:disable Metrics/ClassLength -- one search's state, the atoms' coverage included
+        # rubocop:disable-next Metrics/AbcSize, Metrics/MethodLength -- one line per part of the search
         def initialize(conn, footprint, queries, honour:, statement_timeout_ms:, binding: nil) # rubocop:disable Metrics/ParameterLists
           @queries = %i[original candidate].zip(queries).to_h
           @catalog = Catalog.new(conn, footprint)
           @domains = Domains.new(conn, @catalog, queries, binding:)
           @generator = Generator.new(@catalog, @domains)
-          @session = Session.new(conn, @catalog, queries, honour:, statement_timeout_ms:, binding:)
+          @session = Session.new(conn, @catalog, queries, honour:, statement_timeout_ms:, binding:,
+                                                          cut: @generator.plan.cut_keys)
           @lift = Lift.new(conn, @catalog, @domains, honour:, statement_timeout_ms:, binding:)
           @coverage = Coverage.new(PredicateAtoms.extract(PgQuery.parse(queries.first),
                                                           column_names: @catalog.schema.column_names),

@@ -50,12 +50,12 @@ module Quaack
         RESTART = 500
         ILLEGAL = :illegal
 
-        def initialize(conn, catalog, queries, honour:, statement_timeout_ms:, binding: nil) # rubocop:disable Metrics/ParameterLists
+        def initialize(conn, catalog, queries, honour:, statement_timeout_ms:, binding: nil, cut: []) # rubocop:disable Metrics/ParameterLists
           @conn = conn
           @queries = queries
           @binding = binding
           @typed = ArenaRunner::Typed.new(binding)
-          @loader = Loader.new(conn, catalog, honour)
+          @loader = Loader.new(conn, catalog, honour, cut:)
           @timeout = statement_timeout_ms
           @mode = ResultComparison::Shape.parse(queries.first, :original, binding:).mode
           @picks = ResultComparison::Picks.any?(*queries, binding:)

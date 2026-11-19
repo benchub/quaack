@@ -64,21 +64,34 @@ module Quaack
             WHERE b.conparentid OPERATOR(pg_catalog.=) 0
           SQL
 
-          def initialize(conn, catalog, honour)
+          # cut holds the nullable foreign keys the generator cut to break a
+          # cycle (Generator::Plan#cut_keys), whose values it fills once every
+          # row is drawn.
+          def initialize(conn, catalog, honour, cut: [])
             @conn = conn
             @catalog = catalog
             @honour = honour
+            @cut = cut
           end
 
+          # Each cut key is made deferrable, so a world loads with it
+          # checked only once every insert has run (SET CONSTRAINTS ...
+          # IMMEDIATE), and rows that close a cycle load in the world's
+          # order (task 20261118-185846-1).
           def prepare
             empty
             @catalog.dropped.each { @conn.exec("ALTER TABLE #{table_sql(it.child)} DROP CONSTRAINT #{quote(it.name)}") }
+            @cut.each do |key|
+              @conn.exec("ALTER TABLE #{table_sql(key.child)} ALTER CONSTRAINT #{quote(key.name)} " \
+                         "DEFERRABLE INITIALLY DEFERRED")
+            end
             @updates = capture
           end
 
           # Whether the world loaded.
           def load(rows)
-            ok = Session.batch(@conn, ["ROLLBACK TO SAVEPOINT quaack_base", *inserts(rows)]).all?(&:last)
+            ok = Session.batch(@conn, ["ROLLBACK TO SAVEPOINT quaack_base", *deferring("DEFERRED"),
+                                       *inserts(rows), *deferring("IMMEDIATE")]).all?(&:last)
             ok && @updates.all? { |sql, params| attempt { @conn.exec_params(sql, params) } }
           end
 
@@ -91,6 +104,13 @@ module Quaack
               @conn.exec("ALTER TABLE #{quote(schema)}.#{quote(table)} DROP CONSTRAINT #{quote(name)}")
             end
             @conn.exec("TRUNCATE #{tables.join(", ")}")
+          end
+
+          def deferring(mode)
+            return [] if @cut.empty?
+
+            names = @cut.map { "#{quote(it.child.schema)}.#{quote(it.name)}" }.uniq.join(", ")
+            ["SET CONSTRAINTS #{names} #{mode}"]
           end
 
           def inserts(rows) = rows.chunk_while { |a, b| a.table == b.table }.flat_map { insert(it) }

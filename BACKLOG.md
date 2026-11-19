@@ -20,6 +20,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261012-50
 - 20261018-32
 - 20261021-5
+- 20261118-185846-1
 - 20261115-055039-1
 - 20261112-032618-1
 - 20261015-5
@@ -352,13 +353,15 @@ From 20261012-52, bullet 1. A rewrite rewrite-test's search couldn't test goes o
 - **Open questions:** Whether to do it, and whether the replay drift is acceptable.
 - **Status:** todo
 
-### 20261118-185846-1. Fuzz and enumerate pass a wrong rewrite that needs both edges of an FK cycle filled.
+### 20261118-185846-1. Fuzz and enumerate pass a wrong rewrite that needs both edges of an FK cycle filled. Done, see BACKLOG-COMPLETE.md; the enumerate half is 20261118-223854-1.
 
-From 20261012-52. On `accounts.course_template_id -> courses` (nullable) and `courses.account_id -> accounts` (NOT NULL), dropping a Rails `where.missing` anti join (`... LEFT JOIN courses c ON c.id = a.course_template_id WHERE c.id IS NULL` rewritten as all accounts) passes fuzz at 1000 trials and enumerate at 2000 worlds (bound 3). A world that tells them apart needs an account whose template is a course of an account, which the lift loads with every constraint enforced in table order (`Fuzz::Lift#loaded`, "a cycle among them loads in the order found, and fails to load if it must"), so the kill likely never lifts. Load the nullable cycle column after both tables, by UPDATE, as counterexample rounds do (20261003-17), and add the case to `enclave/spec/fuzz_fk_cycle_postgres_spec.rb`, red first. Enclave change; it goes on "Unreleased enclave changes".
+### 20261118-223854-1. Enumerate leaves an FK cycle's cut key NULL.
 
-- **Depends on:** None.
-- **Came from:** The build of 20261012-52, 2026-11-18.
-- **Design:** rewrite-test (fuzz's lift).
+From 20261118-185846-1. Enumerate's worlds (`Fuzz::Enumerate::Worlds`) give a cut cycle key one fixed value, NULL, so no enumerated world fills both edges of a cycle, and enumerate alone still passes the dropped `where.missing` anti join on `accounts.course_template_id`. Give a nullable cut key the parent keys of the world (as fuzz's Draw now does), load through the same deferred cut constraints, and test first in `enclave/spec/fuzz_fk_cycle_postgres_spec.rb` with fuzz stopped at zero trials. Keep the world count bounded. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261118-185846-1.
+- **Came from:** The build of 20261118-185846-1, 2026-11-18.
+- **Design:** rewrite-test (enumerate).
 - **Status:** todo
 
 ### 20261015-1. TestPostgres.extra_server: a failed cleanup masks the readiness error. Done, see BACKLOG-COMPLETE.md.
@@ -585,5 +588,14 @@ After 20261118-223225-2, any cast of a date or timestamp to text or varchar is r
 - **Depends on:** 20261115-073253-2 (landed).
 - **Came from:** The review of 20261115-073253-2, 2026-11-18 (minor).
 - **Design:** fixture-compare.
+- **Status:** todo
+
+### 20261119-001202-1. Fuzz cut keys: a partitioned table's inherited FK, and a test that a dangling cut key fails to load (minors from 20261118-185846-1).
+
+The review of 20261118-185846-1 found: (1) when a cut cycle key is a foreign key a partition inherits, `ALTER CONSTRAINT ... DEFERRABLE` on the child errors and aborts the session's `prepare`; refuse cleanly or alter it at the parent. Rare. (2) No spec plants a dangling cut-key value to prove `SET CONSTRAINTS ... IMMEDIATE` rejects the world. Postgres tests red first.
+
+- **Depends on:** 20261118-185846-1 (landed).
+- **Came from:** The review of 20261118-185846-1, 2026-11-18 (minor).
+- **Design:** rewrite-test (fuzz worlds).
 - **Status:** todo
 
