@@ -14009,3 +14009,12 @@ From 20261118-185846-1. Enumerate's worlds (`Fuzz::Enumerate::Worlds`) give a cu
 - **Came from:** The build of 20261118-185846-1, 2026-11-18.
 - **Design:** rewrite-test (enumerate).
 - **Status:** done
+
+### 20261119-000039-1. Window picks: two unaliased FROM subqueries end as `pick_run_failed` (minor from 20261115-073253-2).
+
+20261115-073253-2 names an unaliased FROM subquery `quaack_pick_from` in the forced copy. Two unaliased subqueries in one FROM, or one beside a FROM item already named `quaack_pick_from`, collide, and the comparison ends as `pick_run_failed` (`unsupported_order`) instead of a clean refusal. No wrong match, no leak. Fix: number the aliases, or raise `Unforceable` when the name is taken. Postgres test red first.
+
+- **Depends on:** 20261115-073253-2 (landed).
+- **Came from:** The review of 20261115-073253-2, 2026-11-18 (minor).
+- **Design:** fixture-compare.
+- **Status:** done. Each unaliased FROM subquery gets its own `quaack_pick_from` name, numbered past every string in the query.

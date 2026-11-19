@@ -230,9 +230,26 @@ module Quaack
         def force(tree, descending:, top:, check: false)
           tree = copy(tree)
           root = tree[:stmts].first[:stmt][:select_stmt]
+          taken = Thread.current[TAKEN]
+          Thread.current[TAKEN] = strings_in(tree)
           # Innermost first, so an aggregate's copies of its arguments carry
           # the aggregates inside them already forced.
           [tree, force_aggregates!(root, descending, check) + force_selects(root, descending, top, check)]
+        ensure
+          Thread.current[TAKEN] = taken
+        end
+
+        # The thread key of every string in the query being forced, which a
+        # name QUAACK adds must not take.
+        TAKEN = :quaack_pick_taken
+
+        def strings_in(node, found = Set.new)
+          case node
+          when Hash then node.each_value { strings_in(it, found) }
+          when Array then node.each { strings_in(it, found) }
+          when String then found << node
+          end
+          found
         end
 
         # Forces each aggregate pick, and checks each min or max when
@@ -456,10 +473,14 @@ module Quaack
 
         # Names an unaliased FROM subquery (Postgres 16+) in the forced
         # copy, so its whole row can be named. Nothing can refer to it by
-        # name in the query as written.
+        # name in the query as written. Each gets its own name, numbered
+        # past every string the query already holds.
         def name_subselect!(subselect)
-          subselect[:alias] = { aliasname: "#{PICK}_from" }
-          "#{PICK}_from"
+          taken = Thread.current[TAKEN]
+          name = (1..).lazy.map { it == 1 ? "#{PICK}_from" : "#{PICK}_from_#{it}" }.find { !taken.include?(it) }
+          taken << name
+          subselect[:alias] = { aliasname: name }
+          name
         end
 
         def join_names(join)
