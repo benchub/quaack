@@ -51,4 +51,19 @@ RSpec.describe Quaack::Enclave::Fuzz do
       expect(verdict(original, candidate)).to eq(:disproved)
     end
   end
+
+  # Enumerate alone fills the cut key too (task 20261118-223854-1): fuzz
+  # stopped at zero trials and faked as passed, since a real fuzz pass
+  # needs a compared world, and fuzz kills this one on its first.
+  it "disproves the dropped where.missing anti join by enumerate alone" do
+    queries = ["SELECT a.id FROM fx.accounts a LEFT JOIN fx.courses c ON c.id = a.course_template_id " \
+               "WHERE c.id IS NULL ORDER BY a.id", "SELECT a.id FROM fx.accounts a ORDER BY a.id"]
+    search = described_class::Search.new(conn, described_class.send(:footprint, queries), queries,
+                                         honour: [], statement_timeout_ms: 5000)
+    passed = described_class::Outcome.new(verdict: :passed, rule: nil, trials: 0, sizes: [], reason: nil)
+    search.define_singleton_method(:fuzzed) { |*| passed }
+    results = search.call(described_class::StopRule.trials(0), Random.new(1),
+                          described_class::Enumerate::Limit.worlds(500))
+    expect(results.enumerate.verdict).to eq(:disproved)
+  end
 end

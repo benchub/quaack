@@ -14000,3 +14000,12 @@ The second review of 20261012-52 found that `Fuzz::Differ#official?` runs the or
 - **Came from:** The second review of 20261012-52, 2026-11-18 (minor).
 - **Design:** rewrite-test.
 - **Status:** done (2026-11-18: `saved` hands `official?` a remark lambda that marks the server clock before each statement, so a cancel is timed from its own statement)
+
+### 20261118-223854-1. Enumerate leaves an FK cycle's cut key NULL.
+
+From 20261118-185846-1. Enumerate's worlds (`Fuzz::Enumerate::Worlds`) give a cut cycle key one fixed value, NULL, so no enumerated world fills both edges of a cycle, and enumerate alone still passes the dropped `where.missing` anti join on `accounts.course_template_id`. Give a nullable cut key the parent keys of the world (as fuzz's Draw now does), load through the same deferred cut constraints, and test first in `enclave/spec/fuzz_fk_cycle_postgres_spec.rb` with fuzz stopped at zero trials. Keep the world count bounded. Enclave change; it goes on "Unreleased enclave changes".
+
+- **Depends on:** 20261118-185846-1.
+- **Came from:** The build of 20261118-185846-1, 2026-11-18.
+- **Design:** rewrite-test (enumerate).
+- **Status:** done

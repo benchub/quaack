@@ -22,8 +22,10 @@ module Quaack
         # NOT NULL foreign key points to an empty table can't have rows),
         # each multiset of kinds per table whose costs add up to w - n, and
         # each way to point each row's foreign keys at a row of the parent
-        # table in the world, or NULL where the key allows it. A row's other
-        # planned columns hold one fixed value each: NULL in a cut key; the
+        # table in the world, or NULL where the key allows it, a cut key (one
+        # that closed a foreign-key cycle) included, with NULL always
+        # allowed. A row's other planned columns hold one fixed value each:
+        # the
         # nth of its key class's values and shared keys in a key class's
         # single-column unique key (:pk), or the column's next unique value
         # (Domains#unique) when the table has more rows than those, unless
@@ -47,7 +49,8 @@ module Quaack
             @domains = domains
             @tables = plan.order
             @kinds = @tables.to_h { [it, kinds.for(it)] }
-            @keys = @tables.to_h { |t| [t, plan.entries_for(t).select { it.kind == :fk }.map(&:fk).uniq] }
+            @keys = keys(:fk)
+            @cuts = keys(:null)
           end
 
           def max_rows = MAX_PER_TABLE * @tables.size
@@ -70,6 +73,12 @@ module Quaack
           end
 
           private
+
+          # Each table's foreign keys planned as kind: :fk for the kept ones,
+          # :null for the cut ones.
+          def keys(kind)
+            @tables.to_h { |t| [t, @plan.entries_for(t).filter_map { it.fk if it.kind == kind }.uniq] }
+          end
 
           def heaviest(rows)
             splits(rows).map { |split| rows + @tables.each_index.sum { split[it] * costliest(@tables[it]) } }
@@ -138,11 +147,12 @@ module Quaack
           # The rows of a kind choice, then each wiring of their foreign keys.
           def wire(choice, &)
             rows = rows(choice)
-            slots = rows.flat_map { |row| @keys[row.table].map { [row, it] } }
-            assign(slots, 0, rows.group_by(&:table)) do
+            assign(slots(rows), 0, rows.group_by(&:table)) do
               yield unique(rows.map { Generator::Row.new(it.table, it.cells.dup) })
             end
           end
+
+          def slots(rows) = rows.flat_map { |row| (@keys[row.table] + @cuts[row.table]).map { [row, it] } }
 
           def rows(choice)
             fresh = 0
@@ -224,7 +234,14 @@ module Quaack
           end
 
           # The rows a key can point to, and NULL where it allows it.
-          def parents(key, by_table) = by_table.fetch(key.parent, []) + (@plan.fk_nullable?(key) ? [nil] : [])
+          # A cut key, which closed a cycle, is always nullable, and its
+          # parent's rows are all in by_table by now: the session loads it
+          # with the cut constraint deferred (task 20261118-223854-1).
+          def parents(key, by_table)
+            by_table.fetch(key.parent, []) + (@plan.fk_nullable?(key) || cut?(key) ? [nil] : [])
+          end
+
+          def cut?(key) = @cuts.values.any? { it.include?(key) }
         end
       end
     end
