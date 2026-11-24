@@ -14140,3 +14140,12 @@ The review of 20261124-180943-1 found that `row_number() OVER (ORDER BY t.id)` i
 - **Came from:** The review of 20261124-180943-1, 2026-11-24 (minor).
 - **Design:** result-comparison.
 - **Status:** done
+
+### 20261124-221500-1. Joined-key total order: pin the window frame check with a test (from 20261124-195500-1).
+
+The second review of 20261124-195500-1 found that removing the `frame_options != DEFAULT_FRAME` check in `JoinedKey#ordered?` leaves every test green. Add a test: `count(*) OVER (PARTITION BY users.id ROWS UNBOUNDED PRECEDING)` in the joined query keeps its `nondeterministic_collation` refusal.
+
+- **Depends on:** 20261124-195500-1 (landed).
+- **Came from:** The second review of 20261124-195500-1, 2026-11-24 (minor).
+- **Design:** result-comparison.
+- **Status:** done

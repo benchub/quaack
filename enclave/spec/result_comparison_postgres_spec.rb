@@ -1128,6 +1128,14 @@ RSpec.describe Quaack::Enclave::ResultComparison do
                                   rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
           end
 
+          it "still refuses a window partitioned by the key with an explicit frame" do
+            window = "count(*) OVER (PARTITION BY users.id ROWS UNBOUNDED PRECEDING) AS n"
+            counted = joined.sub("SELECT users.*,", "SELECT users.*, #{window},")
+
+            expect(fields(compare(counted, counted,
+                                  rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
+          end
+
           it "compares row for row when each window is partitioned by the key" do
             counted = joined.sub("SELECT users.*,", "SELECT users.*, count(*) OVER (PARTITION BY users.id) AS n,")
 
