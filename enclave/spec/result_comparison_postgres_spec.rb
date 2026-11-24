@@ -1079,11 +1079,46 @@ RSpec.describe Quaack::Enclave::ResultComparison do
           expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :value)
         end
 
-        it "still refuses when the original joins and can repeat the keyed rows" do
-          joined = original.sub("FROM users\n", "FROM users JOIN enrollments e ON e.user_id = users.id\n")
+        describe "and the original joins another table that can repeat the keyed rows" do
+          let(:joined) { original.sub("FROM users\n", "FROM users JOIN enrollments e ON e.user_id = users.id\n") }
 
-          expect(fields(compare(joined, joined,
-                                rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
+          it "compares row for row when every output column comes from the keyed table" do
+            expect(fields(compare(joined, joined, rows:))).to include(match: true, mode: :ordered)
+          end
+
+          it "fails a candidate whose rows come back in another order, and no row value crosses" do
+            with_sentinel = rows.map do |row|
+              next row unless row.table == users && %w[3 4].include?(row.values.first)
+
+              Quaack::Enclave::ArenaRunner::FixtureRow.new(table: users, columns: row.columns,
+                                                           values: [row.values.first, "a#{sentinel}", "active"])
+            end
+            verdict = compare(joined, joined.sub("users.id LIMIT", "users.id DESC LIMIT"), rows: with_sentinel)
+
+            expect(fields(verdict)).to include(match: false, rule: :value)
+            expect(verdict.to_h.to_s).not_to include(sentinel)
+          end
+
+          it "still refuses when an output column comes from the other table" do
+            other = joined.sub("SELECT users.*,", "SELECT users.*, e.*,")
+
+            expect(fields(compare(other, other,
+                                  rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
+          end
+
+          it "still refuses an unqualified output column of the other table" do
+            other = joined.sub("SELECT users.*,", "SELECT users.*, user_id,")
+
+            expect(fields(compare(other, other,
+                                  rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
+          end
+
+          it "still refuses a bare star, which outputs the other table's columns" do
+            star = joined.sub("SELECT users.*,", "SELECT users.*, *,")
+
+            expect(fields(compare(star, star,
+                                  rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
+          end
         end
 
         it "still refuses a DISTINCT" do

@@ -6,6 +6,8 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
+- 20261124-180943-1
+
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
@@ -457,14 +459,7 @@ From the build of 20261015-5. (1) `ARRAY(SELECT ...)` with no `ORDER BY`, or one
 - **Status:** todo (needs the user's go-ahead for real claude calls and a planted user CLAUDE.md)
 
 
-### 20261124-180943-1. Result-comparison: an order that ends in one table's unique key, with every output column from that table, is total enough under a nondeterministic collation.
-
-A real run (2026-11-24) dropped every rewrite of a paged two-table list query with `unsupported_order` for a nondeterministic collation. Its shape: `SELECT t.*, t.name COLLATE nd FROM t JOIN link ON link.t_id = t.id WHERE link.owner_id = $1 AND t.state <> $2 ORDER BY t.name COLLATE nd, t.id LIMIT $3 OFFSET $4`. The total-order exception (DESIGN.md, result-comparison) needs the top level to read one table, so the join fails it. But two rows can tie only on equal `t.id`, so they're the same `t` row, and every output column comes from `t`, so tied rows print byte-identically and any order gives the same output. Extend the exception: the top level's `ORDER BY` names, as plain columns, every column of a not-null unique key of one FROM table (no predicate or expression, deterministic collations), every output column is a column of that table or an expression only over its columns, and the query has no `GROUP BY`, `DISTINCT`, set operation, or set-returning call at its target list's level. The join may repeat a row; repeats print the same. Then compare as ordered with no refusal for the collation. Keep the candidate-side checks as they are (a candidate whose own order ties can only lose), and keep the pick checks. Test with a synthetic schema of the same shape (two tables, an ICU nondeterministic collation, a link table with and without duplicate pairs), with a sentinel check that no row values cross. Also check that an output column from the other table (`link.*`) still refuses. Enclave change; it goes on "Unreleased enclave changes". Never use names from the real report.
-
-- **Depends on:** None.
-- **Came from:** The user's real run, 2026-11-24.
-- **Design:** result-comparison.
-- **Status:** todo
+### 20261124-180943-1. Result-comparison: a joined order that ends in one table's unique key. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261124-180943-2. Index candidates on the original query all time out while measured.
 
