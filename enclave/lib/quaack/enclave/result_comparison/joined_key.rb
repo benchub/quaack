@@ -17,6 +17,9 @@ module Quaack
             AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) ANY ('{%<names>s}'::pg_catalog.name[])
         SQL
 
+        # pg_query's frame_options for a window with no frame clause.
+        DEFAULT_FRAME = 1058
+
         module_function
 
         # extra narrows InnerCuts' keys, as TotalOrder's deterministic keys.
@@ -33,12 +36,20 @@ module Quaack
         # The table's columns each target-list window partitions by. Rows
         # that tie on the key are one row repeated; a window partitioned by
         # the key gives them the same value, and any other can tell them
-        # apart. A window in a subquery counts too. A named window refuses,
-        # since the WINDOW clause holds its partition.
+        # apart. One with an ORDER BY or a frame can still tell them apart
+        # inside the partition, so it refuses too. A window in a subquery
+        # counts as well.
         def window_partitions(top, table)
           windows(top[:target_list]).map do |over|
-            over[:name] || over[:refname] ? [] : partition_columns(over[:partition_clause], table)
+            ordered?(over) ? [] : partition_columns(over[:partition_clause], table)
           end
+        end
+
+        # Whether a window can tell a partition's rows apart, by its ORDER
+        # BY or an explicit frame, or names a window whose partition we
+        # don't read.
+        def ordered?(over)
+          over[:name] || over[:refname] || over[:order_clause] || over[:frame_options] != DEFAULT_FRAME
         end
 
         def windows(node)
