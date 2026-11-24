@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "ddl_fingerprint"
 require_relative "node_rewrite"
 require_relative "pg_array"
 require_relative "redacted_ddl_text"
@@ -179,5 +180,8 @@ module Quaack
         end
       end
     end
+
+    # #withholding_ddl and #withheld (20261124-233000-1).
+    CandidateDdlRedaction.include(DdlFingerprint::Withholding)
   end
 end
