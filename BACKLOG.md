@@ -478,3 +478,12 @@ The review of 20261124-180943-1 found that `row_number() OVER (ORDER BY t.id)` i
 - **Came from:** The review of 20261124-180943-1, 2026-11-24 (minor).
 - **Design:** result-comparison.
 - **Status:** todo
+
+### 20261124-213000-1. Joined-key total order: a window in a target-list subquery partitioned by the outer key (from 20261124-195500-1).
+
+The review of 20261124-195500-1 found that a window inside a target-list subquery, whose `PARTITION BY` names the outer key table's alias, counts toward the outer key. Rare; refuse it cleanly.
+
+- **Depends on:** 20261124-195500-1.
+- **Came from:** The review of 20261124-195500-1, 2026-11-24 (minor).
+- **Design:** result-comparison.
+- **Status:** todo
