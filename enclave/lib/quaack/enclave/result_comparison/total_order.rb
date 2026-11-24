@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../function_calls"
+require_relative "joined_key"
 
 module Quaack
   module Enclave
@@ -48,7 +49,9 @@ module Quaack
 
         def keyed?(transaction, tree)
           top = tree[:stmts].first[:stmt][:select_stmt]
-          InnerCuts.deterministic?(transaction, top, InnerCuts.cte_names(tree), DETERMINISTIC_KEYS_SQL)
+          ctes = InnerCuts.cte_names(tree)
+          InnerCuts.deterministic?(transaction, top, ctes, DETERMINISTIC_KEYS_SQL) ||
+            JoinedKey.keyed?(transaction, top, ctes, DETERMINISTIC_KEYS_SQL)
         end
 
         # A function of the name, unqualified or as schema.name, a function

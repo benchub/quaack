@@ -489,8 +489,16 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
       expect(verdict(original, candidate, params: %w[3 1])).to eq(%w[fail value])
     end
 
-    it "still refuses when the original joins and can repeat the keyed rows" do
+    # Task 20261124-180943-1: repeats of the keyed row print the same.
+    it "passes when the original joins but outputs only the keyed table's columns" do
       joined = original.sub("FROM nd_users\n", "FROM nd_users JOIN nd_enrollments e ON e.user_id = nd_users.id\n")
+
+      expect(verdict(joined, joined, params: %w[3 1])).to eq(["pass", nil])
+    end
+
+    it "still refuses when the original joins and outputs the other table's columns" do
+      joined = original.sub("FROM nd_users\n", "FROM nd_users JOIN nd_enrollments e ON e.user_id = nd_users.id\n")
+                       .sub("SELECT nd_users.*,", "SELECT nd_users.*, e.*,")
 
       expect(verdict(joined, joined, params: %w[3 1])).to eq(%w[fail unsupported_order nondeterministic_collation])
     end
