@@ -38,10 +38,11 @@ module Quaack
         # the key gives them the same value, and any other can tell them
         # apart. One with an ORDER BY or a frame can still tell them apart
         # inside the partition, so it refuses too. A window in a subquery
-        # counts as well.
+        # refuses as well: the outer key is one value there, not a partition
+        # of the outer rows.
         def window_partitions(top, table)
-          windows(top[:target_list]).map do |over|
-            ordered?(over) ? [] : partition_columns(over[:partition_clause], table)
+          windows(top[:target_list]).map do |over, nested|
+            ordered?(over) || nested ? [] : partition_columns(over[:partition_clause], table)
           end
         end
 
@@ -52,12 +53,13 @@ module Quaack
           over[:name] || over[:refname] || over[:order_clause] || over[:frame_options] != DEFAULT_FRAME
         end
 
-        def windows(node)
+        # Each window under node, with whether it sits in a subquery.
+        def windows(node, nested: false)
           case node
-          when Array then node.flat_map { windows(it) }
+          when Array then node.flat_map { windows(it, nested:) }
           when Hash
             over = node.dig(:func_call, :over)
-            (over ? [over] : []) + windows(node.values)
+            (over ? [[over, nested]] : []) + windows(node.values, nested: nested || node.key?(:sub_link))
           else []
           end
         end

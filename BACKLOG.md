@@ -8,6 +8,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 
 - 20261124-180943-1
 - 20261124-195500-1
+- 20261124-213000-1
 
 ## How this file works.
 
@@ -470,14 +471,3 @@ The same real run (2026-11-24) reported "Timed out while QUAACK measured it" for
 - **Came from:** The user's real run, 2026-11-24.
 - **Design:** racetrack measurement.
 - **Status:** todo (needs a rerun with timeout detail from the user)
-
-### 20261124-195500-1. Joined-key total order: refuse a target-list window function not partitioned by the key. Done, see BACKLOG-COMPLETE.md.
-
-### 20261124-213000-1. Joined-key total order: a window in a target-list subquery partitioned by the outer key (from 20261124-195500-1).
-
-The review of 20261124-195500-1 found that a window inside a target-list subquery, whose `PARTITION BY` names the outer key table's alias, counts toward the outer key. Rare; refuse it cleanly.
-
-- **Depends on:** 20261124-195500-1.
-- **Came from:** The review of 20261124-195500-1, 2026-11-24 (minor).
-- **Design:** result-comparison.
-- **Status:** todo
