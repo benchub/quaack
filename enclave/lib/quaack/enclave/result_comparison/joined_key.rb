@@ -26,8 +26,44 @@ module Quaack
           table = output_table(transaction, top)
           return false if table.nil? || cte?(table, ctes)
 
-          sorted = InnerCuts.sorted_columns(top, table)
-          InnerCuts.keys(transaction, table, extra).any? { |key| (key - sorted).empty? }
+          covers = [InnerCuts.sorted_columns(top, table), *window_partitions(top, table)]
+          InnerCuts.keys(transaction, table, extra).any? { |key| covers.all? { (key - it).empty? } }
+        end
+
+        # The table's columns each target-list window partitions by. Rows
+        # that tie on the key are one row repeated; a window partitioned by
+        # the key gives them the same value, and any other can tell them
+        # apart. A window in a subquery counts too. A named window refuses,
+        # since the WINDOW clause holds its partition.
+        def window_partitions(top, table)
+          windows(top[:target_list]).map do |over|
+            over[:name] || over[:refname] ? [] : partition_columns(over[:partition_clause], table)
+          end
+        end
+
+        def windows(node)
+          case node
+          when Array then node.flat_map { windows(it) }
+          when Hash
+            over = node.dig(:func_call, :over)
+            (over ? [over] : []) + windows(node.values)
+          else []
+          end
+        end
+
+        # Plain columns of table in a PARTITION BY, by name.
+        def partition_columns(clause, table)
+          own = table.dig(:alias, :aliasname) || table[:relname]
+          Array(clause).filter_map { own_column(it, own) }
+        end
+
+        # A column reference's name when it's own's column, plain or
+        # qualified by own.
+        def own_column(item, own)
+          names = Array(item.dig(:column_ref, :fields)).map { it.dig(:string, :sval) }
+          return unless names.all? && [1, 2].include?(names.size)
+
+          names.last if names.size == 1 || names.first == own
         end
 
         # An unqualified name may be a CTE, not the table, so it has no keys.
@@ -36,8 +72,6 @@ module Quaack
         # The FROM table every output column comes from, or nil.
         def output_table(transaction, top)
           qualifiers = Array(top[:target_list]).map { target_qualifiers(it[:res_target][:val]) }
-          return if qualifiers.any?(nil)
-
           bare, names = qualifiers.flatten(1).uniq.partition { it.is_a?(Array) }
           table = named_table(top, names)
           table if table && table_columns?(transaction, table, bare.map(&:last))

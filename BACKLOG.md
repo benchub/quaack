@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261124-180943-1
+- 20261124-195500-1
 
 ## How this file works.
 
@@ -470,11 +471,3 @@ The same real run (2026-11-24) reported "Timed out while QUAACK measured it" for
 - **Design:** racetrack measurement.
 - **Status:** todo (needs a rerun with timeout detail from the user)
 
-### 20261124-195500-1. Joined-key total order: refuse a target-list window function not partitioned by the key (from 20261124-180943-1).
-
-The review of 20261124-180943-1 found that `row_number() OVER (ORDER BY t.id)` in the target list of a joined query passes the new rule, though two joined rows tying on the key get different `rn` values. Refuse a target-list window under the joined-key exception unless it's partitioned by the key (or refuse all). Low risk: it mostly makes a spurious fail. Also give the `qualifiers.any?(nil)` guard in `JoinedKey#output_table` a test that needs it, or drop it.
-
-- **Depends on:** 20261124-180943-1 (landed).
-- **Came from:** The review of 20261124-180943-1, 2026-11-24 (minor).
-- **Design:** result-comparison.
-- **Status:** todo

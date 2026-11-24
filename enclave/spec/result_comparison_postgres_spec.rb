@@ -1113,6 +1113,19 @@ RSpec.describe Quaack::Enclave::ResultComparison do
                                   rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
           end
 
+          it "still refuses a window function that numbers the repeated rows apart" do
+            numbered = joined.sub("SELECT users.*,", "SELECT users.*, row_number() OVER (ORDER BY users.id) AS rn,")
+
+            expect(fields(compare(numbered, numbered,
+                                  rows:))).to include(rule: :unsupported_order, reason: :nondeterministic_collation)
+          end
+
+          it "compares row for row when each window is partitioned by the key" do
+            counted = joined.sub("SELECT users.*,", "SELECT users.*, count(*) OVER (PARTITION BY users.id) AS n,")
+
+            expect(fields(compare(counted, counted, rows:))).to include(match: true, mode: :ordered)
+          end
+
           it "still refuses a bare star, which outputs the other table's columns" do
             star = joined.sub("SELECT users.*,", "SELECT users.*, *,")
 
