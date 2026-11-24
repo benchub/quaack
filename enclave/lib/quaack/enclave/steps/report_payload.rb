@@ -19,6 +19,7 @@ require_relative "negative_result"
 require_relative "own_rewrites"
 require_relative "redundant_indexes"
 require_relative "rewrite_fate"
+require_relative "index_feedback"
 require_relative "rewrite_source"
 require_relative "rule_bugs"
 require_relative "winner_times"
@@ -172,9 +173,10 @@ module Quaack
           selection = store.read("selection")
           stats = PlannerStatistics.load(store).statistics
           labels = MeasuredLabels.call(store)
+          shown = logged_indexes(store, stats)
           [{ type: :report, **selection.slice("top", "infinite_sets").transform_keys(&:to_sym),
              **original(store, stats), **labels(store, selection, labels, stats), rewrites: rewrites(store, stats),
-             indexes: indexes(store, stats), timed_out_count: store.read("candidate_runs")["timed_out_count"],
+             indexes: shown, timed_out_count: store.read("candidate_runs")["timed_out_count"],
              index_sources: IndexSources.call(store, labels, selection), **findings(store, selection) }]
         end
 
@@ -307,13 +309,20 @@ module Quaack
           ClockAnchoring.restore(store.read("anchored_query"), replacements, added)
         end
 
+        # indexes, with each withheld DDL logged.
+        def logged_indexes(store, stats)
+          redaction = CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"])
+          indexes(store, stats, redaction:).tap { IndexFeedback.log_withheld(store, "report-payload", redaction) }
+        end
+
         def indexes(store, stats, redaction: nil)
           redaction ||= CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"])
           sizes = ExistingIndexes.new(store)
           sources = IndexSources.sources(store)
           store.read("index_build")["indexes"].to_h do |name, built|
             proposed = IndexCandidate.from_ddl(built["ddl"], sources: [:llm])
-            [name, { "ddl" => proposed && redaction.outbound_ddl(proposed), "size" => built["size"],
+            # A withheld DDL (20261124-233000-1) goes as nil, the index's name alone.
+            [name, { "ddl" => proposed && redaction.withholding_ddl(proposed), "size" => built["size"],
                      **coverage(proposed, stats, sizes), "sources" => sources.fetch(name) }]
           end
         end

@@ -55,8 +55,8 @@ RSpec.describe "the DDL fields that leave the enclave" do
   end
 
   # index_payload's candidates and set_aside
-  it "refuses a planted literal in index_payload's DDL, and passes a realistic one" do
-    refused { Quaack::Enclave::Steps::IndexPayload.candidate(plain(planted), leaky) }
+  it "withholds a planted literal in index_payload's DDL, and passes a realistic one" do
+    expect(Quaack::Enclave::Steps::IndexPayload.candidate(plain(planted), leaky)).to be_nil
     expect(Quaack::Enclave::Steps::IndexPayload.candidate(plain(realistic), redaction)["ddl"])
       .to eq(redaction.ddl(candidate(realistic)))
   end
@@ -69,14 +69,14 @@ RSpec.describe "the DDL fields that leave the enclave" do
   end
 
   # index_build_progress's ddl
-  it "refuses a planted literal in index_build_progress's DDL, and passes a realistic one" do
-    refused { Quaack::Enclave::Steps::IndexBuild.shown(leaky, planted) }
+  it "withholds a planted literal in index_build_progress's DDL, and passes a realistic one" do
+    expect(Quaack::Enclave::Steps::IndexBuild.shown(leaky, planted)).to be_nil
     expect(Quaack::Enclave::Steps::IndexBuild.shown(redaction, realistic))
       .to match(/\ACREATE INDEX quaack_\w+ ON public.orders .*status = 'held'/)
   end
 
   # the report's indexes[].ddl
-  it "refuses a planted literal in the report's indexes[].ddl, and passes a realistic one" do
+  it "withholds a planted literal in the report's indexes[].ddl, and passes a realistic one" do
     store = Struct.new(:data) do
       def read(name) = data.fetch(name)
       def entry?(name) = data.key?(name)
@@ -88,7 +88,7 @@ RSpec.describe "the DDL fields that leave the enclave" do
       Quaack::Enclave::Steps::ReportPayload.indexes(st, stats, redaction:)
     }
 
-    refused { run.call(leaky, planted) }
+    expect(run.call(leaky, planted)["quaack_a"]["ddl"]).to be_nil
     expect(run.call(redaction, realistic)["quaack_a"]["ddl"]).to eq(redaction.ddl(candidate(realistic)))
   end
 end

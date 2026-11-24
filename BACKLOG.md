@@ -9,6 +9,7 @@ Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md
 - 20261124-180943-1
 - 20261124-195500-1
 - 20261124-213000-1
+- 20261124-233000-1
 
 ## How this file works.
 
@@ -479,4 +480,24 @@ The review of 20261124-213000-1 found only the scalar-subquery form of a target-
 - **Depends on:** 20261124-213000-1 (landed).
 - **Came from:** The review of 20261124-213000-1, 2026-11-24 (minor).
 - **Design:** result-comparison.
+- **Status:** todo
+
+### 20261124-233000-1. Index ideas: one candidate failing the outbound DDL check aborts the run.
+
+A real `quaack run` died with `internal_error (step index-feedback)` right after `[10/19] Failed after 55s (rewrite-index-ideas)`. internal_errors.log had `class=Quaack::Enclave::CandidateDdlRedaction::Error at=quaack/enclave/candidate_ddl_redaction.rb:51`: `outbound_ddl` found `redacted?` false for one candidate's DDL. The query was a paged list over a wide table joined to a link table, with `t.name COLLATE nd` in the target list and ORDER BY, `t.state <> $2`, LIMIT and OFFSET; rewrites included MATERIALIZED CTEs. (1) Find the failing shape and fix its root cause. (2) Make every caller of `outbound_ddl` drop that one candidate fail-closed instead of aborting, keep its DDL out of every payload and report, and count what's dropped. (3) Log each dropped candidate's structural fingerprint (parse-node kinds only, no text) to internal_errors.log.
+
+Landed: parts 2 and 3. `CandidateDdlRedaction#withholding_ddl` returns nil and records the candidate's `DdlFingerprint` where `outbound_ddl` would raise. index-feedback and index-payload's `mechanical_results` drop the candidate and carry a `withheld` count; the report's `indexes[].ddl` and the index-build-progress `ddl` are null; each step writes one `withheld_ddl=<shape>` line per dropped candidate to internal_errors.log. NegativeResult still refuses whole, as before. Part 1 isn't done: about 30 synthetic shapes through `IndexCandidate.from_ddl` and `#ddl` (COLLATE keys, DESC NULLS LAST, INCLUDE, `$n`, casts, typmods, AT TIME ZONE, BETWEEN, ESCAPE, intervals, ANY arrays) all pass `redacted?`. The next real failure's internal_errors.log line will name the shape. The driver doesn't yet say "N index ideas were withheld" in the report; the count reaches the LLM payloads only.
+
+- **Depends on:** None.
+- **Came from:** The user's real run, 2026-11-24.
+- **Design:** llm-index-ideas, llm-index-refine, the report's indexes.
+- **Status:** todo (fail-closed part landed; root cause waits on a logged fingerprint)
+
+### 20261125-000500-1. Withheld index ideas: let the count out, tell the LLM and the report, drop dead code (from 20261124-233000-1).
+
+The review of 20261124-233000-1 found: index-feedback's new top-level `withheld` count is stripped by `Enclave::Egress`, since `Protocol::WHITELIST`'s `index_feedback` entry doesn't list it (add it, or nest the count); when every shortfall candidate is withheld, the LLM gets `revise: true` with empty `candidates` and no reason; the report doesn't say how many index ideas were withheld; `IndexFeedback#ddl` is no longer called in production (remove it and its spec); `SHAPE` is defined in both `DdlFingerprint` and `InternalErrorLog`.
+
+- **Depends on:** 20261124-233000-1 (landed in part).
+- **Came from:** The review of 20261124-233000-1, 2026-11-25 (minor).
+- **Design:** index-feedback.
 - **Status:** todo

@@ -7,6 +7,7 @@ require_relative "../index_share"
 require_relative "../rewrite_entry"
 require_relative "../rewrite_burndown"
 require_relative "../run_server"
+require_relative "index_feedback"
 require_relative "index_search"
 
 module Quaack
@@ -50,13 +51,17 @@ module Quaack
           number = number(options["index"])
           redaction = CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"])
           connection = Enclave::RunServer.connect(store, :racetrack)
-          starting = lambda { |index, total, ddl|
-            progress.call(type: :index_build_progress, index:, total:, ddl: shown(redaction, ddl))
-          }
-          build(store, connection, number, starting)
+          build(store, connection, number, starting(progress, redaction))
+          IndexFeedback.log_withheld(store, "index-build", redaction)
           []
         ensure
           connection&.close
+        end
+
+        def starting(progress, redaction)
+          lambda { |index, total, ddl|
+            progress.call(type: :index_build_progress, index:, total:, ddl: shown(redaction, ddl))
+          }
         end
 
         def build(store, connection, number, starting)
@@ -98,11 +103,11 @@ module Quaack
         end
 
         # ddl through redaction, with the index's name, or nil if it can't
-        # be read as a candidate.
+        # be read as a candidate or its DDL is withheld (20261124-233000-1).
         def shown(redaction, ddl)
           candidate = IndexCandidate.from_ddl(ddl, sources: [:llm]) or return
-          redaction.outbound_ddl(candidate).sub(/\ACREATE INDEX ON /,
-                                                "CREATE INDEX #{Enclave::IndexBuild.name(ddl)} ON ")
+          shown = redaction.withholding_ddl(candidate) or return
+          shown.sub(/\ACREATE INDEX ON /, "CREATE INDEX #{Enclave::IndexBuild.name(ddl)} ON ")
         end
       end
     end

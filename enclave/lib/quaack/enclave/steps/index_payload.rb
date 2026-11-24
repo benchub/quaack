@@ -4,6 +4,7 @@ require_relative "../schema_payload"
 require_relative "../stats_payload"
 require_relative "../candidate_ddl_redaction"
 require_relative "../index_store"
+require_relative "index_feedback"
 require_relative "index_search"
 
 module Quaack
@@ -68,10 +69,10 @@ module Quaack
           query, plan = query_and_plan(store, search, entry)
           sqls = [store.read("qualified_query")]
           sqls << store.read(search)["sql"] unless search == "original"
+          mechanical_results = logged_mechanical(store, entry, CandidateDdlRedaction.new(outbound))
           { type: :index_payload, query:, placeholders: placeholders(store),
             plan: plan.map { it.except("Settings") },
-            schema: schema(store),
-            mechanical_results: mechanical(entry, CandidateDdlRedaction.new(outbound)),
+            schema: schema(store), mechanical_results:,
             stats: StatsPayload.subset(outbound, sqls) }
         end
 
@@ -104,10 +105,20 @@ module Quaack
         # relations and without pg_dump's noise.
         def schema(store) = SchemaPayload.subset(store.read("schema_subset"), store.read("relations"))
 
+        # A candidate whose DDL fails the outbound check is withheld
+        # (20261124-233000-1): left out, and counted in withheld.
         def mechanical(entry, redaction)
+          best = best(entry["results"])
+          candidates = entry["results"].map { result(it, redaction, best) }
+          set_aside = entry["dedupe"]["set_aside"].map { candidate(it, redaction) }
           { "baseline" => entry["baseline"].transform_values { it.slice("total_cost", "plan") },
-            "candidates" => entry["results"].map { result(it, redaction, best(entry["results"])) },
-            "set_aside" => entry["dedupe"]["set_aside"].map { candidate(it, redaction) } }
+            "candidates" => candidates.compact, "set_aside" => set_aside.compact,
+            "withheld" => (candidates + set_aside).count(nil) }
+        end
+
+        # mechanical, with each withheld candidate logged.
+        def logged_mechanical(store, entry, redaction)
+          mechanical(entry, redaction).tap { IndexFeedback.log_withheld(store, "index-payload", redaction) }
         end
 
         # The unrefused candidate the planner used whose total cost, summed
@@ -120,14 +131,17 @@ module Quaack
         def result(result, redaction, best)
           refusal = result["refusal"]
           plans = result.equal?(best) ? result["plans"] : result["plans"].transform_values { it.except("plan") }
-          candidate(result["candidate"], redaction).merge(
+          shown = candidate(result["candidate"], redaction) or return
+          shown.merge(
             "partial_constant_only" => !result["candidate"]["predicate"].nil?, "size" => result["size"],
             "refusal" => refusal&.slice("rule", "sqlstate"), "plans" => plans
           )
         end
 
+        # nil when the candidate's DDL is withheld.
         def candidate(plain, redaction)
-          { "ddl" => redaction.outbound_ddl(IndexStore.candidate(plain)), "sources" => plain["sources"] }
+          ddl = redaction.withholding_ddl(IndexStore.candidate(plain)) or return
+          { "ddl" => ddl, "sources" => plain["sources"] }
         end
       end
     end

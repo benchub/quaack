@@ -28,10 +28,26 @@ module Quaack
 
       module_function
 
-      def append(dir, step:, exception:, now: Time.now)
+      # Shapes as DdlFingerprint writes them: node kinds and brackets only.
+      SHAPE = /\A[A-Za-z(),]{1,4000}\z/
+
+      def append(dir, step:, exception:, now: Time.now) = write(dir) { line(step, exception, now) }
+
+      # A line for a candidate withheld because its DDL failed the outbound
+      # check (20261124-233000-1): the time, the step, and the DDL's shape,
+      # as DdlFingerprint gives it, or none if fingerprint isn't plain shape.
+      #
+      #   2026-11-24T23:30:00Z step=index-feedback withheld_ddl=IndexStmt(RangeVar,IndexElem)
+      def withheld(dir, step:, fingerprint:, now: Time.now)
+        write(dir) do
+          "#{now.utc.strftime("%FT%TZ")} step=#{plain(step, STEP)} withheld_ddl=#{plain(fingerprint, SHAPE)}\n"
+        end
+      end
+
+      def write(dir)
         File.open(File.join(dir, FILE_NAME), File::WRONLY | File::APPEND | File::CREAT | File::NOFOLLOW, 0o600) do |f|
           f.chmod(0o600)
-          f.write(line(step, exception, now)) if f.size < MAX_BYTES
+          f.write(yield) if f.size < MAX_BYTES
         end
         nil
       rescue SignalException

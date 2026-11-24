@@ -138,7 +138,8 @@ RSpec.describe "quaacks index-payload, against a real server" do
     entry = stored.read("index_search_original")
     best = best(entry["results"])
 
-    expect(results.keys).to eq(%w[baseline candidates set_aside])
+    expect(results.keys).to eq(%w[baseline candidates set_aside withheld])
+    expect(results["withheld"]).to eq(0)
     expect(results["baseline"]).to eq(entry["baseline"].transform_values { it.slice("total_cost", "plan") })
     expect([results["candidates"].size, best.nil?]).to eq([entry["results"].size, false])
     expect(entry["results"].size).to be > 1

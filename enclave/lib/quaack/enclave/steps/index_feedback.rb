@@ -2,6 +2,7 @@
 
 require_relative "../candidate_ddl_redaction"
 require_relative "../index_store"
+require_relative "../internal_error_log"
 require_relative "../refinement"
 require_relative "index_search"
 
@@ -30,7 +31,9 @@ module Quaack
       #
       # Trust boundary. As in IndexPayload: the plans are the stored ones,
       # redacted through redact, and every DDL goes through
-      # CandidateDdlRedaction.
+      # CandidateDdlRedaction. A candidate whose DDL fails its outbound
+      # check is withheld (20261124-233000-1): left out of candidates,
+      # counted in withheld, and only its shape logged to internal_errors.log.
       module IndexFeedback
         OPTIONS = { "search" => :value }.freeze
 
@@ -45,7 +48,15 @@ module Quaack
 
           entry = store.read("index_search_#{search}")
           redaction = CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"])
-          [message(entry, redaction)]
+          message = message(entry, redaction)
+          log_withheld(store, "index-feedback", redaction)
+          [message]
+        end
+
+        # Writes each candidate redaction withheld to the run's
+        # internal_errors.log, by its shape alone (20261124-233000-1).
+        def log_withheld(store, step, redaction)
+          redaction.withheld.each { InternalErrorLog.withheld(store.path, step:, fingerprint: it) }
         end
 
         def message(entry, redaction)
@@ -54,16 +65,21 @@ module Quaack
             candidate(result, shortfall, entry["results"], redaction)
           end
           { type: :index_feedback, revise: shortfalls.any?, refined: entry["refined"] == true,
-            baseline: entry["baseline"].transform_values { it["total_cost"] }, candidates: }
+            baseline: entry["baseline"].transform_values { it["total_cost"] }, candidates: candidates.compact,
+            withheld: candidates.count(nil) }
         end
 
+        # nil when the candidate's DDL is withheld.
         def candidate(result, shortfall, mechanical, redaction)
           kind, index = shortfall
-          { "ddl" => ddl(result, redaction), "partial_constant_only" => result["partial_constant_only"],
+          shown = withholding(result, redaction) or return
+          { "ddl" => shown, "partial_constant_only" => result["partial_constant_only"],
             "size" => result["size"], "refusal" => result["refusal"]&.slice("rule", "sqlstate"),
             "plans" => result["plans"], "shortfall" => kind,
-            "beaten_by" => index && ddl(mechanical.fetch(index), redaction) }
+            "beaten_by" => index && withholding(mechanical.fetch(index), redaction) }
         end
+
+        def withholding(result, redaction) = redaction.withholding_ddl(IndexStore.candidate(result["candidate"]))
 
         def ddl(result, redaction) = redaction.outbound_ddl(IndexStore.candidate(result["candidate"]))
       end
