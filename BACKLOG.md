@@ -7,6 +7,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 Enclave or protocol changes on `main` since the last version bump (see CLAUDE.md). While this list isn't empty, don't deploy from `main`.
 
 - 20261124-180943-1
+- 20261124-195500-1
 
 ## How this file works.
 
@@ -470,14 +471,7 @@ The same real run (2026-11-24) reported "Timed out while QUAACK measured it" for
 - **Design:** racetrack measurement.
 - **Status:** todo (needs a rerun with timeout detail from the user)
 
-### 20261124-195500-1. Joined-key total order: refuse a target-list window function not partitioned by the key (from 20261124-180943-1).
-
-The review of 20261124-180943-1 found that `row_number() OVER (ORDER BY t.id)` in the target list of a joined query passes the new rule, though two joined rows tying on the key get different `rn` values. Refuse a target-list window under the joined-key exception unless it's partitioned by the key (or refuse all). Low risk: it mostly makes a spurious fail. Also give the `qualifiers.any?(nil)` guard in `JoinedKey#output_table` a test that needs it, or drop it.
-
-- **Depends on:** 20261124-180943-1 (landed).
-- **Came from:** The review of 20261124-180943-1, 2026-11-24 (minor).
-- **Design:** result-comparison.
-- **Status:** todo
+### 20261124-195500-1. Joined-key total order: refuse a target-list window function not partitioned by the key. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261124-213000-1. Joined-key total order: a window in a target-list subquery partitioned by the outer key (from 20261124-195500-1).
 
@@ -485,5 +479,14 @@ The review of 20261124-195500-1 found that a window inside a target-list subquer
 
 - **Depends on:** 20261124-195500-1.
 - **Came from:** The review of 20261124-195500-1, 2026-11-24 (minor).
+- **Design:** result-comparison.
+- **Status:** todo
+
+### 20261124-221500-1. Joined-key total order: pin the window frame check with a test (from 20261124-195500-1).
+
+The second review of 20261124-195500-1 found that removing the `frame_options != DEFAULT_FRAME` check in `JoinedKey#ordered?` leaves every test green. Add a test: `count(*) OVER (PARTITION BY users.id ROWS UNBOUNDED PRECEDING)` in the joined query keeps its `nondeterministic_collation` refusal.
+
+- **Depends on:** 20261124-195500-1 (landed).
+- **Came from:** The second review of 20261124-195500-1, 2026-11-24 (minor).
 - **Design:** result-comparison.
 - **Status:** todo
